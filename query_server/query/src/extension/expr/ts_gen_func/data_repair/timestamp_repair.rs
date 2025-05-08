@@ -1,9 +1,51 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use datafusion::arrow::array::{Float64Array, Int64Array, StringArray};
+use datafusion::error::{DataFusionError, Result as DFResult};
+use datafusion::logical_expr::{
+    ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl, Signature, TypeSignature, Volatility,
+};
+use models::arrow::DataType;
 use serde::Deserialize;
 use spi::DFResult;
 
-use crate::extension::expr::ts_gen_func::utils::get_arg;
+use crate::extension::expr::scalar_function::unimplemented_scalar_impl;
+use crate::extension::expr::ts_gen_func::utils::{full_signatures, get_arg};
+
+pub struct TimestampRepairFunc {
+    signature: Signature,
+}
+
+impl TimestampRepairFunc {
+    pub fn new() -> Self {
+        Self {
+            signature: full_signatures(),
+        }
+    }
+}
+
+impl ScalarUDFImpl for TimestampRepairFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        "timestamp_repair"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, arg_types: &[DataType]) -> DFResult<DataType> {
+        Ok(DataType::List(Arc::new(arg_types[1].clone())))
+    }
+
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
+        unimplemented_scalar_impl(self.name())
+    }
+}
 
 pub fn compute(
     timestamps: &mut [i64],
@@ -33,7 +75,7 @@ enum IntervalMode {
 }
 
 impl IntervalMode {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn try_from_str(s: &str) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
             "mode" => Some(IntervalMode::Mode),
             "cluster" => Some(IntervalMode::Cluster),
@@ -75,7 +117,7 @@ fn get_interval_mode_and_start_mode_from_arg(arg: &Arg) -> DFResult<(IntervalMod
         }
         IntervalMode::Interval(i)
     } else if let Some(m) = &arg.method {
-        IntervalMode::from_str(m).ok_or_else(|| {
+        IntervalMode::try_from_str(m).ok_or_else(|| {
             datafusion::error::DataFusionError::Execution(format!("Invalid method: {}", m))
         })?
     } else {

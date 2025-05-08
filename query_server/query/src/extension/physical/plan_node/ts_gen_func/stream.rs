@@ -9,7 +9,7 @@ use futures::{ready, Stream, StreamExt};
 use models::arrow::SchemaRef;
 use spi::DFResult;
 
-use crate::extension::expr::TSGenFunc;
+use crate::extension::expr::TsGenFunc;
 use crate::extension::utils::{
     columnar_value_to_array, columnar_value_to_scalar, f64_vec_to_numeric_arr,
     i64ns_vec_to_timestamp_arr, numeric_arr_as_f64_iter, timestamp_arr_as_i64ns_iter,
@@ -20,10 +20,11 @@ pub struct TSGenFuncStream {
     time_expr: Arc<dyn PhysicalExpr>,
     field_exprs: Vec<Arc<dyn PhysicalExpr>>,
     arg_expr: Option<Arc<dyn PhysicalExpr>>,
-    symbol: TSGenFunc,
+    symbol: TsGenFunc,
     schema: SchemaRef,
     time_vec: Vec<i64>,
     field_vecs: Vec<Vec<f64>>,
+    /// Arguments for the function, url-encoded string.
     arg: Option<String>,
     finished: bool,
 }
@@ -34,7 +35,7 @@ impl TSGenFuncStream {
         time_expr: Arc<dyn PhysicalExpr>,
         field_exprs: Vec<Arc<dyn PhysicalExpr>>,
         arg_expr: Option<Arc<dyn PhysicalExpr>>,
-        symbol: TSGenFunc,
+        symbol: TsGenFunc,
         schema: SchemaRef,
     ) -> Self {
         let field_num = field_exprs.len();

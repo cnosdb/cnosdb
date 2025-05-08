@@ -16,7 +16,7 @@ pub use selector_function::{BOTTOM, TOPK};
 pub use session_function::register_session_udfs;
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;
-pub use ts_gen_func::TSGenFunc;
+pub use ts_gen_func::TsGenFunc;
 pub use window::{
     ceil_sliding_window, floor_sliding_window, time_window_signature, DEFAULT_TIME_WINDOW_START,
     TIME_WINDOW, TIME_WINDOW_UDF, WINDOW_COL_NAME, WINDOW_END, WINDOW_START,

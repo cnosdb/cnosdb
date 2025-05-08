@@ -16,7 +16,7 @@ use datafusion::logical_expr::ScalarFunctionImplementation;
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;
 
-use super::ts_gen_func::TSGenFunc;
+use super::ts_gen_func::TsGenFunc;
 
 pub const TIME_WINDOW_GAPFILL: &str = "time_window_gapfill";
 pub const LOCF: &str = "locf";

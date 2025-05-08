@@ -209,13 +209,13 @@ pub fn reassign_predicate_columns(
     match pred.expr() {
         None => Ok(None),
         Some(expr) => {
-            let new_expr = expr.clone().rewrite(&mut rewriter)?;
-            let mut vistor = ColumnVisitor {
+            let new_expr = expr.clone().rewrite(&mut rewriter)?.data;
+            let mut visitor = ColumnVisitor {
                 part_schema: file_schema,
                 has_col_not_in_file: false,
             };
-            new_expr.visit(&mut vistor)?;
-            if vistor.has_col_not_in_file {
+            new_expr.visit(&mut visitor)?;
+            if visitor.has_col_not_in_file {
                 return Ok(None);
             }
             Ok(Some(new_expr))
@@ -258,7 +258,7 @@ impl TreeNodeRewriter for PredicateColumnsReassigner {
                 Err(_) => {
                     // the column expr must be in the full schema
                     return match self.full_schema.field_with_name(column.name()) {
-                        Ok(_) => Ok(expr),
+                        Ok(_) => Ok(Transformed::no(expr)),
                         Err(e) => {
                             // If the column is not in the full schema, should throw the error
                             Err(DataFusionError::ArrowError(e, None))
@@ -266,36 +266,43 @@ impl TreeNodeRewriter for PredicateColumnsReassigner {
                     };
                 }
             };
-            return Ok(Arc::new(Column::new(column.name(), index)));
-        } else if let Some(b_expr) = expr.as_any().downcast_ref::<BinaryExpr>() {
+            return Ok(Transformed::yes(Arc::new(Column::new(
+                column.name(),
+                index,
+            ))));
+        } else if let Some(bin_expr) = expr.as_any().downcast_ref::<BinaryExpr>() {
             let mut visitor = ColumnVisitor {
                 part_schema: self.file_schema.clone(),
                 has_col_not_in_file: false,
             };
-            b_expr.left().visit(&mut visitor)?;
+            bin_expr.left().visit(&mut visitor)?;
             let left = visitor.has_col_not_in_file;
 
             visitor.has_col_not_in_file = false;
-            b_expr.right().visit(&mut visitor)?;
+            bin_expr.right().visit(&mut visitor)?;
             let right = visitor.has_col_not_in_file;
 
-            if matches!(b_expr.op(), Operator::And) {
-                return match (left, right) {
-                    (false, false) => Ok(expr),
-                    (true, true) => Ok(Arc::new(Literal::new(ScalarValue::Boolean(Some(true))))),
-                    (true, _) => Ok(b_expr.right().clone()),
-                    (_, true) => Ok(b_expr.left().clone()),
+            if matches!(bin_expr.op(), Operator::And) {
+                let transformed: Transformed<Arc<dyn PhysicalExpr>> = match (left, right) {
+                    (false, false) => Transformed::no(expr),
+                    (true, true) => {
+                        Transformed::yes(Arc::new(Literal::new(ScalarValue::Boolean(Some(true)))))
+                    }
+                    (true, _) => Transformed::yes(bin_expr.right().clone()),
+                    (_, true) => Transformed::yes(bin_expr.left().clone()),
                 };
+                return Ok(transformed);
             }
-            if matches!(b_expr.op(), Operator::Or) {
-                return match (left, right) {
-                    (false, false) => Ok(expr),
-                    _ => Ok(Arc::new(Literal::new(ScalarValue::Boolean(Some(true))))),
+            if matches!(bin_expr.op(), Operator::Or) {
+                let transformed: Transformed<Arc<dyn PhysicalExpr>> = match (left, right) {
+                    (false, false) => Transformed::no(expr),
+                    _ => Transformed::yes(Arc::new(Literal::new(ScalarValue::Boolean(Some(true))))),
                 };
+                return Ok(transformed);
             }
         }
 
-        Ok(expr)
+        Ok(Transformed::no(expr))
     }
 }
 

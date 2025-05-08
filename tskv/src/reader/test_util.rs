@@ -52,7 +52,7 @@ pub fn random_record_batches(
                     let expr = Arc::new(CastExpr::new(bin_expr, array.data_type().clone(), None));
                     let column_value = expr.evaluate(&b).unwrap();
 
-                    column_value.into_array(array.len())
+                    column_value.into_array(array.len()).unwrap()
                 }
             };
 

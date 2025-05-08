@@ -2,10 +2,48 @@ use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 use std::rc::Rc;
 
+use datafusion::error::Result as DFResult;
+use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl, Signature};
+use models::arrow::DataType;
 use serde::Deserialize;
 use spi::DFResult;
 
-use crate::extension::expr::ts_gen_func::utils::get_arg;
+use crate::extension::expr::scalar_function::unimplemented_scalar_impl;
+use crate::extension::expr::ts_gen_func::utils::{full_signatures, get_arg};
+
+pub struct ValueRepairFunc {
+    signature: Signature,
+}
+
+impl ValueRepairFunc {
+    pub fn new() -> Self {
+        Self {
+            signature: full_signatures(),
+        }
+    }
+}
+
+impl ScalarUDFImpl for ValueRepairFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        "value_repair"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, arg_types: &[DataType]) -> DFResult<DataType> {
+        Ok(DataType::List(Arc::new(arg_types[1].clone())))
+    }
+
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
+        unimplemented_scalar_impl(self.name())
+    }
+}
 
 pub fn compute(
     timestamps: &mut Vec<i64>,

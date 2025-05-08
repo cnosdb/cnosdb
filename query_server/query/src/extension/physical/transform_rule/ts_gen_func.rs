@@ -58,28 +58,19 @@ fn plan_ts_gen_func(
     let time_expr = create_physical_expr(
         &ts_gen_func.time_expr,
         logical_inputs.schema(),
-        &physical_inputs.schema(),
         execution_props,
     )?;
 
     let field_exprs = ts_gen_func
         .field_exprs
         .iter()
-        .map(|expr| {
-            create_physical_expr(
-                expr,
-                logical_inputs.schema(),
-                &physical_inputs.schema(),
-                execution_props,
-            )
-        })
+        .map(|expr| create_physical_expr(expr, logical_inputs.schema(), execution_props))
         .collect::<DFResult<Vec<_>>>()?;
 
     let arg_expr = if let Some(expr) = &ts_gen_func.arg_expr {
         Some(create_physical_expr(
             expr,
             logical_inputs.schema(),
-            &physical_inputs.schema(),
             execution_props,
         )?)
     } else {

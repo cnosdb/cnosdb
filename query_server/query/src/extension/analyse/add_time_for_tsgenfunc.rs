@@ -6,7 +6,7 @@ use datafusion::logical_expr::{Extension, Filter, LogicalPlan, Projection};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::Expr;
 
-use crate::extension::expr::TSGenFunc;
+use crate::extension::expr::TsGenFunc;
 use crate::extension::logical::plan_node::ts_gen_func::TSGenFuncNode;
 use crate::extension::utils::downcast_plan_node;
 
@@ -18,7 +18,7 @@ impl AnalyzerRule for AddTimeForTSGenFunc {
     }
 
     fn name(&self) -> &str {
-        "TransformTSGenFunc"
+        "AddTimeForTSGenFunc"
     }
 }
 
@@ -32,15 +32,9 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
 
         if let LogicalPlan::Extension(Extension { node }) = temp_input.as_ref() {
             if let Some(tsgenfunc) = downcast_plan_node::<TSGenFuncNode>(node.as_ref()) {
-                if tsgenfunc.symbol == TSGenFunc::TimestampRepair {
+                if tsgenfunc.symbol == TsGenFunc::TimestampRepair {
                     let mut new_expr = expr.clone();
-                    new_expr.insert(
-                        0,
-                        Expr::Column(Column {
-                            relation: None,
-                            name: "time".to_string(),
-                        }),
-                    );
+                    new_expr.insert(0, Expr::Column(Column::new(None, "time")));
                     return Ok(Transformed::Yes(LogicalPlan::Projection(
                         Projection::try_new(new_expr, input.clone())?,
                     )));

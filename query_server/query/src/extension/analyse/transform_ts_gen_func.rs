@@ -14,18 +14,18 @@ use datafusion::scalar::ScalarValue;
 use models::arrow::DataType;
 use spi::DFResult;
 
-use crate::extension::expr::TSGenFunc;
+use crate::extension::expr::TsGenFunc;
 use crate::extension::logical::plan_node::ts_gen_func::TSGenFuncNode;
 
 pub struct TransformTSGenFunc;
 
 impl AnalyzerRule for TransformTSGenFunc {
-    fn name(&self) -> &str {
-        "TransformTSGenFunc"
-    }
-
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> DFResult<LogicalPlan> {
         plan.transform_up(&analyze_internal)
+    }
+
+    fn name(&self) -> &str {
+        "TransformTSGenFunc"
     }
 }
 
@@ -38,7 +38,7 @@ fn analyze_internal(plan: LogicalPlan) -> DFResult<Transformed<LogicalPlan>> {
             (expr, Cow::Owned(expr.to_string()))
         };
         if let Expr::ScalarUDF(ScalarUDFExpr { fun, args }) = expr {
-            if let Some(symbol) = TSGenFunc::from_str_opt(&fun.name) {
+            if let Some(symbol) = TsGenFunc::try_from_str(&fun.name) {
                 if let LogicalPlan::Projection(projection) = &plan {
                     if projection.expr.len() != 1 {
                         return Err(datafusion::error::DataFusionError::Plan(
@@ -64,7 +64,7 @@ fn new_plan(
     args: &[Expr],
     input: &LogicalPlan,
     alias: &str,
-    symbol: TSGenFunc,
+    symbol: TsGenFunc,
 ) -> DFResult<LogicalPlan> {
     let arg_types = args
         .iter()

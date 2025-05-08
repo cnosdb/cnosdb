@@ -4,7 +4,7 @@ use datafusion::common::DFSchemaRef;
 use datafusion::logical_expr::{Expr, ExprSchemable, LogicalPlan, UserDefinedLogicalNodeCore};
 use models::arrow::DataType;
 
-use crate::extension::expr::TSGenFunc;
+use crate::extension::expr::TsGenFunc;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct TSGenFuncNode {
@@ -12,7 +12,7 @@ pub struct TSGenFuncNode {
     pub field_exprs: Vec<Expr>,
     pub arg_expr: Option<Expr>,
     pub input: Arc<LogicalPlan>,
-    pub symbol: TSGenFunc,
+    pub symbol: TsGenFunc,
     pub schema: DFSchemaRef,
 }
 

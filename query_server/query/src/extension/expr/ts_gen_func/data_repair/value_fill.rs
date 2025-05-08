@@ -1,7 +1,45 @@
+use datafusion::error::Result as DFResult;
+use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl, Signature};
+use models::arrow::DataType;
 use serde::Deserialize;
 use spi::DFResult;
 
-use crate::extension::expr::ts_gen_func::utils::get_arg;
+use crate::extension::expr::scalar_function::unimplemented_scalar_impl;
+use crate::extension::expr::ts_gen_func::utils::{full_signatures, get_arg};
+
+pub struct ValueFillFunc {
+    signature: Signature,
+}
+
+impl ValueFillFunc {
+    pub fn new() -> Self {
+        Self {
+            signature: full_signatures(),
+        }
+    }
+}
+
+impl ScalarUDFImpl for ValueFillFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        "value_fill"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, arg_types: &[DataType]) -> DFResult<DataType> {
+        Ok(DataType::List(Arc::new(arg_types[1].clone())))
+    }
+
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
+        unimplemented_scalar_impl(self.name())
+    }
+}
 
 pub fn compute(
     timestamps: &mut Vec<i64>,
@@ -31,7 +69,7 @@ enum FillMethod {
 }
 
 impl FillMethod {
-    pub fn from_str(method: &str) -> Option<Self> {
+    pub fn try_from_str(method: &str) -> Option<Self> {
         match method.to_ascii_lowercase().as_str() {
             "mean" => Some(Self::Mean),
             "previous" => Some(Self::Previous),
@@ -45,7 +83,7 @@ impl FillMethod {
 
 fn get_fill_method_from_arg(arg: Arg) -> DFResult<FillMethod> {
     Ok(match arg.method.as_deref() {
-        Some(s) => FillMethod::from_str(s).ok_or_else(|| {
+        Some(s) => FillMethod::try_from_str(s).ok_or_else(|| {
             datafusion::error::DataFusionError::Execution(format!("Invalid fill method: {}", s))
         })?,
         None => FillMethod::Linear,

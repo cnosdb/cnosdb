@@ -13,7 +13,7 @@ use models::arrow::SchemaRef;
 use spi::DFResult;
 
 use self::stream::TSGenFuncStream;
-use crate::extension::expr::TSGenFunc;
+use crate::extension::expr::TsGenFunc;
 
 mod stream;
 
@@ -31,7 +31,7 @@ pub struct TSGenFuncExec {
     time_expr: Arc<dyn PhysicalExpr>,
     field_exprs: Vec<Arc<dyn PhysicalExpr>>,
     arg_expr: Option<Arc<dyn PhysicalExpr>>,
-    symbol: TSGenFunc,
+    symbol: TsGenFunc,
     schema: SchemaRef,
     properties: PlanProperties,
 }
@@ -42,7 +42,7 @@ impl TSGenFuncExec {
         time_expr: Arc<dyn PhysicalExpr>,
         field_exprs: Vec<Arc<dyn PhysicalExpr>>,
         arg_expr: Option<Arc<dyn PhysicalExpr>>,
-        symbol: TSGenFunc,
+        symbol: TsGenFunc,
         schema: SchemaRef,
     ) -> Self {
         Self {
