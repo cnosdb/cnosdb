@@ -19,22 +19,22 @@ pub fn register_all_udf(func_manager: &mut dyn FunctionMetadataManager) -> Query
 }
 
 #[derive(Debug, EnumIter, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TsGenFunc {
+pub enum TimeSeriesGenFunc {
     TimestampRepair,
     ValueFill,
     ValueRepair,
 }
 
-impl TsGenFunc {
+impl TimeSeriesGenFunc {
     pub fn try_from_str(name: &str) -> Option<Self> {
-        TsGenFunc::iter().find(|func| func.name() == name)
+        TimeSeriesGenFunc::iter().find(|func| func.name() == name)
     }
 
     pub const fn name(&self) -> &'static str {
         match self {
-            TsGenFunc::TimestampRepair => "timestamp_repair",
-            TsGenFunc::ValueFill => "value_fill",
-            TsGenFunc::ValueRepair => "value_repair",
+            TimeSeriesGenFunc::TimestampRepair => "timestamp_repair",
+            TimeSeriesGenFunc::ValueFill => "value_fill",
+            TimeSeriesGenFunc::ValueRepair => "value_repair",
         }
     }
 
@@ -45,9 +45,11 @@ impl TsGenFunc {
         arg_str: Option<&str>,
     ) -> DFResult<(Vec<i64>, Vec<f64>)> {
         match self {
-            TsGenFunc::TimestampRepair => timestamp_repair::compute(timestamps, fields, arg_str),
-            TsGenFunc::ValueFill => value_fill::compute(timestamps, fields, arg_str),
-            TsGenFunc::ValueRepair => value_repair::compute(timestamps, fields, arg_str),
+            TimeSeriesGenFunc::TimestampRepair => {
+                timestamp_repair::compute(timestamps, fields, arg_str)
+            }
+            TimeSeriesGenFunc::ValueFill => value_fill::compute(timestamps, fields, arg_str),
+            TimeSeriesGenFunc::ValueRepair => value_repair::compute(timestamps, fields, arg_str),
         }
     }
 }

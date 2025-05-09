@@ -28,7 +28,7 @@ use crate::extension::physical::optimizer_rule::add_sort::AddSortExec;
 use crate::extension::physical::transform_rule::expand::ExpandPlanner;
 use crate::extension::physical::transform_rule::table_writer::TableWriterPlanner;
 use crate::extension::physical::transform_rule::tag_scan::TagScanPlanner;
-use crate::extension::physical::transform_rule::ts_gen_func::TsGenFuncPlanner;
+use crate::extension::physical::transform_rule::ts_gen_func::TimeSeriesGenFuncPlanner;
 use crate::extension::physical::transform_rule::update_tag::UpdateTagValuePlanner;
 
 pub struct DefaultPhysicalPlanner {
@@ -66,7 +66,7 @@ impl Default for DefaultPhysicalPlanner {
             Arc::new(UpdateTagValuePlanner {}),
             Arc::new(TagScanPlanner {}),
             Arc::new(ExpandPlanner::new()),
-            Arc::new(TsGenFuncPlanner),
+            Arc::new(TimeSeriesGenFuncPlanner),
         ];
 
         // We need to take care of the rule ordering. They may influence each other.

@@ -10,7 +10,6 @@ use models::arrow::DataType;
 use serde::Deserialize;
 use spi::DFResult;
 
-use crate::extension::expr::scalar_function::unimplemented_scalar_impl;
 use crate::extension::expr::ts_gen_func::utils::{full_signatures, get_arg};
 
 pub struct TimestampRepairFunc {
@@ -43,7 +42,10 @@ impl ScalarUDFImpl for TimestampRepairFunc {
     }
 
     fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
-        unimplemented_scalar_impl(self.name())
+        Err(DataFusionError::Plan(format!(
+            "{} can only be used in the SELECT clause as the top-level expression",
+            self.name()
+        )))
     }
 }
 

@@ -12,8 +12,8 @@ use datafusion::physical_plan::{
 use models::arrow::SchemaRef;
 use spi::DFResult;
 
-use self::stream::TSGenFuncStream;
-use crate::extension::expr::TsGenFunc;
+use self::stream::TimeSeriesGenFuncStream;
+use crate::extension::expr::TimeSeriesGenFunc;
 
 mod stream;
 
@@ -26,29 +26,29 @@ trait GenerateTimeSeries {
     ) -> DFResult<(Vec<i64>, Vec<f64>)>;
 }
 
-pub struct TSGenFuncExec {
+pub struct TimeSeriesGenFuncExec {
     input: Arc<dyn ExecutionPlan>,
     time_expr: Arc<dyn PhysicalExpr>,
-    field_exprs: Vec<Arc<dyn PhysicalExpr>>,
+    field_expr: Arc<dyn PhysicalExpr>,
     arg_expr: Option<Arc<dyn PhysicalExpr>>,
-    symbol: TsGenFunc,
+    symbol: TimeSeriesGenFunc,
     schema: SchemaRef,
     properties: PlanProperties,
 }
 
-impl TSGenFuncExec {
+impl TimeSeriesGenFuncExec {
     pub fn new(
         input: Arc<dyn ExecutionPlan>,
         time_expr: Arc<dyn PhysicalExpr>,
-        field_exprs: Vec<Arc<dyn PhysicalExpr>>,
+        field_expr: Arc<dyn PhysicalExpr>,
         arg_expr: Option<Arc<dyn PhysicalExpr>>,
-        symbol: TsGenFunc,
+        symbol: TimeSeriesGenFunc,
         schema: SchemaRef,
     ) -> Self {
         Self {
             input,
             time_expr,
-            field_exprs,
+            field_expr,
             arg_expr,
             symbol,
             schema: schema.clone(),
@@ -62,15 +62,15 @@ impl TSGenFuncExec {
     }
 }
 
-impl Debug for TSGenFuncExec {
+impl Debug for TimeSeriesGenFuncExec {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "TSGenFuncExec",)
+        write!(f, "TimeSeriesGenFuncExec",)
     }
 }
 
-impl ExecutionPlan for TSGenFuncExec {
+impl ExecutionPlan for TimeSeriesGenFuncExec {
     fn name(&self) -> &str {
-        "TSGenFuncExec"
+        "TimeSeriesGenFuncExec"
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -108,7 +108,7 @@ impl ExecutionPlan for TSGenFuncExec {
         Ok(Arc::new(Self {
             input: children[0].clone(),
             time_expr: self.time_expr.clone(),
-            field_exprs: self.field_exprs.clone(),
+            field_expr: self.field_expr.clone(),
             arg_expr: self.arg_expr.clone(),
             symbol: self.symbol,
             schema: self.schema.clone(),
@@ -123,16 +123,16 @@ impl ExecutionPlan for TSGenFuncExec {
     ) -> DFResult<SendableRecordBatchStream> {
         if partition != 0 {
             return Err(datafusion::error::DataFusionError::Internal(format!(
-                "TSGenFuncExec invalid partition {partition}, there can be only one partition"
+                "TimeSeriesGenFuncExec invalid partition {partition}, there can be only one partition"
             )));
         }
 
         let input_stream = self.input.execute(partition, context)?;
 
-        Ok(Box::pin(TSGenFuncStream::new(
+        Ok(Box::pin(TimeSeriesGenFuncStream::new(
             input_stream,
             self.time_expr.clone(),
-            self.field_exprs.clone(),
+            self.field_expr.clone(),
             self.arg_expr.clone(),
             self.symbol,
             self.schema.clone(),
@@ -144,17 +144,13 @@ impl ExecutionPlan for TSGenFuncExec {
     }
 }
 
-impl DisplayAs for TSGenFuncExec {
+impl DisplayAs for TimeSeriesGenFuncExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "TSGenFuncExec: time_expr={}, field_exprs=[{}], arg_expr={:?}, func={}",
+            "TimeSeriesGenFuncExec: time_expr={}, field_expr={}, arg_expr={}, func={}",
             self.time_expr,
-            self.field_exprs
-                .iter()
-                .map(|expr| expr.to_string())
-                .collect::<Vec<_>>()
-                .join(","),
+            self.field_expr,
             self.arg_expr.as_ref().map(|expr| expr.to_string()),
             self.symbol.name(),
         )

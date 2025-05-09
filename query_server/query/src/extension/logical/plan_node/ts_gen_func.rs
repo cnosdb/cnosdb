@@ -4,21 +4,21 @@ use datafusion::common::DFSchemaRef;
 use datafusion::logical_expr::{Expr, ExprSchemable, LogicalPlan, UserDefinedLogicalNodeCore};
 use models::arrow::DataType;
 
-use crate::extension::expr::TsGenFunc;
+use crate::extension::expr::TimeSeriesGenFunc;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct TSGenFuncNode {
+pub struct TimeSeriesGenFuncNode {
     pub time_expr: Expr,
-    pub field_exprs: Vec<Expr>,
+    pub field_expr: Expr,
     pub arg_expr: Option<Expr>,
     pub input: Arc<LogicalPlan>,
-    pub symbol: TsGenFunc,
+    pub symbol: TimeSeriesGenFunc,
     pub schema: DFSchemaRef,
 }
 
-impl UserDefinedLogicalNodeCore for TSGenFuncNode {
+impl UserDefinedLogicalNodeCore for TimeSeriesGenFuncNode {
     fn name(&self) -> &str {
-        "TSGenFunc"
+        "TimeSeriesGenFunc"
     }
 
     fn inputs(&self) -> Vec<&LogicalPlan> {
@@ -30,8 +30,7 @@ impl UserDefinedLogicalNodeCore for TSGenFuncNode {
     }
 
     fn expressions(&self) -> Vec<Expr> {
-        let mut exprs = vec![self.time_expr.clone()];
-        exprs.extend(self.field_exprs.clone());
+        let mut exprs = vec![self.time_expr.clone(), self.field_expr.clone()];
         if let Some(arg_expr) = &self.arg_expr {
             exprs.push(arg_expr.clone());
         }
@@ -41,14 +40,10 @@ impl UserDefinedLogicalNodeCore for TSGenFuncNode {
     fn fmt_for_explain(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{}: time_expr={}, field_exprs=[{}], arg_expr={:?}, func={}",
+            "{}: time_expr={}, field_expr={}, arg_expr={}, func={}",
             self.name(),
             self.time_expr,
-            self.field_exprs
-                .iter()
-                .map(|expr| expr.to_string())
-                .collect::<Vec<_>>()
-                .join(","),
+            self.field_expr,
             self.arg_expr.as_ref().map(|expr| expr.to_string()),
             self.symbol.name(),
         )
@@ -56,19 +51,23 @@ impl UserDefinedLogicalNodeCore for TSGenFuncNode {
 
     fn with_exprs_and_inputs(&self, mut exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
         assert_eq!(inputs.len(), 1, "input size inconsistent");
-        let arg_expr =
-            if exprs[exprs.len() - 1].get_type(inputs[0].schema()).unwrap() == DataType::Utf8 {
-                exprs.pop()
-            } else {
-                None
-            };
-        let time_expr = exprs.remove(0);
-        let field_exprs = exprs;
+
+        let input = inputs.remove(0);
+        let ext_arg_expr = if exprs.len() >= 3 {
+            match exprs[exprs.len() - 1].get_type(inputs.schema()) {
+                Ok(DataType::Utf8) => exprs.pop(),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let time_expr = exprs[0].clone();
+        let field_expr = exprs[1].clone();
         Self {
             time_expr,
-            field_exprs,
+            field_expr,
             arg_expr,
-            input: Arc::new(inputs[0].clone()),
+            input: Arc::new(input),
             symbol: self.symbol,
             schema: self.schema.clone(),
         }

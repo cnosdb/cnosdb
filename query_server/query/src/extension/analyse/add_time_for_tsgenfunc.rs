@@ -6,19 +6,19 @@ use datafusion::logical_expr::{Extension, Filter, LogicalPlan, Projection};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::Expr;
 
-use crate::extension::expr::TsGenFunc;
-use crate::extension::logical::plan_node::ts_gen_func::TSGenFuncNode;
+use crate::extension::expr::TimeSeriesGenFunc;
+use crate::extension::logical::plan_node::ts_gen_func::TimeSeriesGenFuncNode;
 use crate::extension::utils::downcast_plan_node;
 
-pub struct AddTimeForTSGenFunc {}
+pub struct AddTimeForTimeSeriesGenFunc {}
 
-impl AnalyzerRule for AddTimeForTSGenFunc {
+impl AnalyzerRule for AddTimeForTimeSeriesGenFunc {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
         plan.transform_up(&analyze_internal)
     }
 
     fn name(&self) -> &str {
-        "AddTimeForTSGenFunc"
+        "AddTimeForTimeSeriesGenFunc"
     }
 }
 
@@ -31,8 +31,8 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
         }
 
         if let LogicalPlan::Extension(Extension { node }) = temp_input.as_ref() {
-            if let Some(tsgenfunc) = downcast_plan_node::<TSGenFuncNode>(node.as_ref()) {
-                if tsgenfunc.symbol == TsGenFunc::TimestampRepair {
+            if let Some(ts_gen_func) = downcast_plan_node::<TimeSeriesGenFuncNode>(node.as_ref()) {
+                if ts_gen_func.symbol == TimeSeriesGenFunc::TimestampRepair {
                     let mut new_expr = expr.clone();
                     new_expr.insert(0, Expr::Column(Column::new(None, "time")));
                     return Ok(Transformed::Yes(LogicalPlan::Projection(
