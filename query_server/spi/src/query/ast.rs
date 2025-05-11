@@ -2,8 +2,8 @@ use std::fmt;
 
 use datafusion::sql::parser::CreateExternalTable;
 use datafusion::sql::sqlparser::ast::{
-    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, SqlOption, Statement,
-    TableFactor, Value,
+    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, Statement, TableFactor,
+    Value,
 };
 use datafusion::sql::sqlparser::parser::ParserError;
 use models::codec::Encoding;
@@ -67,14 +67,20 @@ pub enum ExtStatement {
 
     // replica cmd
     ShowReplicas,
-    ReplicaDestory(ReplicaDestory),
+    ReplicaDestroy(ReplicaDestroy),
     ReplicaAdd(ReplicaAdd),
     ReplicaRemove(ReplicaRemove),
     ReplicaPromote(ReplicaPromote),
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+pub struct SqlOption {
+    pub name: Ident,
+    pub value: Value,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReplicaDestory {
+pub struct ReplicaDestroy {
     pub replica_id: ReplicationSetId,
 }
 
@@ -356,7 +362,7 @@ impl ColumnOption {
         Self {
             name,
             is_tag: true,
-            data_type: DataType::String,
+            data_type: DataType::String(None),
             encoding: None,
         }
     }

@@ -154,8 +154,10 @@ arrow-array = { version = "55.0.0" }
 arrow-buffer = { version = "55.0.0" }
 arrow-flight = { version = "55.0.0" }
 arrow-schema = { version = "55.0.0", features = ["serde"] }
-datafusion = { version = "47.0.0" }
-datafusion-proto = { version = "47.0.0" }
+# datafusion = { version = "47.0.0" }
+datafusion = { path = "../../opensource/arrow-datafusion/datafusion/core" } # TODO(zipper): remove this
+# datafusion-proto = { version = "47.0.0" }
+datafusion-proto = { path = "../../opensource/arrow-datafusion/datafusion/proto" } # TODO(zipper): remote this
 
 ## Test & benchmark
 assert_float_eq = "1.1"

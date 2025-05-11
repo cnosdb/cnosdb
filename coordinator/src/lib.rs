@@ -47,7 +47,7 @@ pub enum ReplicationCmdType {
     /// vnode id. just remove the follower, if remove leader temporarily unavailable
     RemoveRaftNode(u32),
     /// replica set id
-    DestoryRaftGroup(u32),
+    DestroyRaftGroup(u32),
     /// replica set id, new leader vnode id
     PromoteLeader(u32, u32),
 }
@@ -61,7 +61,7 @@ pub trait Coordinator: Send + Sync {
 
     fn tskv_raft_writer(&self, request: RaftWriteCommand) -> TskvRaftWriter;
 
-    /// get all vnodes of a table to quering
+    /// get all vnodes of a table to querying
     async fn table_vnodes(
         &self,
         table: &ResolvedTable,

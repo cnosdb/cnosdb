@@ -646,7 +646,7 @@ impl From<DataFusionError> for QueryError {
                 ArrowSnafu.into_error(arrow_error)
             }
 
-            DataFusionError::ArrowError(e) => ArrowSnafu.into_error(e),
+            DataFusionError::ArrowError(e, _) => ArrowSnafu.into_error(e),
 
             v => DatafusionSnafu.into_error(v),
         }

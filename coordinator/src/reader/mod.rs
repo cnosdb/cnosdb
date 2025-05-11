@@ -36,7 +36,7 @@ pub trait VnodeOpener: Unpin {
 pub struct CheckedCoordinatorRecordBatchStream<O: VnodeOpener> {
     opener: O,
     meta: MetaRef,
-    tenant: Arc<String>,
+    tenant: Arc<str>,
     vnode: VnodeInfo,
     option: QueryOption,
     state: StreamState,
@@ -52,11 +52,11 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
         checker: CheckFuture,
         metrics: &CoordServiceMetrics,
     ) -> Self {
-        let tenant: Arc<String> = option.table_schema.tenant.clone().into();
-        let db = option.table_schema.db.as_str();
+        let tenant = option.table_schema.tenant.clone();
+        let db = option.table_schema.db.as_ref();
 
-        let coord_data_out = metrics.coord_data_out(tenant.as_str(), db);
-        metrics.coord_queries(tenant.as_str(), db).inc_one();
+        let coord_data_out = metrics.coord_data_out(tenant.as_ref(), db);
+        metrics.coord_queries(tenant.as_ref(), db).inc_one();
         Self {
             option,
             opener,

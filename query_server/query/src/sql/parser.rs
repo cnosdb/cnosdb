@@ -2048,7 +2048,7 @@ impl<'a> ExtParser<'a> {
                 return parser_err!("expected REPLICA_ID, after ADD");
             }
             let replica_id = self.parse_number::<ReplicationSetId>()?;
-            Ok(ExtStatement::ReplicaDestory(ast::ReplicaDestory {
+            Ok(ExtStatement::ReplicaDestroy(ast::ReplicaDestroy {
                 replica_id,
             }))
         } else {
@@ -2877,7 +2877,7 @@ mod tests {
         let statement = ExtParser::parse_sql(sql1).unwrap();
         assert_eq!(
             statement[0],
-            ExtStatement::ReplicaDestory(ast::ReplicaDestory { replica_id: 111 })
+            ExtStatement::ReplicaDestroy(ast::ReplicaDestroy { replica_id: 111 })
         );
 
         let sql1 = "show replicas;";

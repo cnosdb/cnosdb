@@ -123,7 +123,7 @@ impl ResourceManager {
             .map_or(vec![], |v| v.buckets);
         for bucket in buckets {
             for replica in bucket.shard_group {
-                let cmd_type = ReplicationCmdType::DestoryRaftGroup(replica.id);
+                let cmd_type = ReplicationCmdType::DestroyRaftGroup(replica.id);
                 coord.replication_manager(tenant_name, cmd_type).await?;
             }
         }

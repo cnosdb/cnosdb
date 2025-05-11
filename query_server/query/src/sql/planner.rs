@@ -11,7 +11,7 @@ use datafusion::arrow::error::ArrowError;
 use datafusion::common::parsers::CompressionTypeVariant;
 use datafusion::common::tree_node::TreeNode;
 use datafusion::common::{
-    Column, DFField, DFSchema, OwnedTableReference, Result as DFResult, ToDFSchema,
+    Column, Constraints, DFField, DFSchema, OwnedTableReference, Result as DFResult, ToDFSchema,
 };
 use datafusion::datasource::file_format::avro::AvroFormat;
 use datafusion::datasource::file_format::csv::CsvFormat;
@@ -31,8 +31,8 @@ use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::utils::expr_to_columns;
 use datafusion::logical_expr::{
     lit, BinaryExpr, BuiltinScalarFunction, Case, CreateExternalTable as PlanCreateExternalTable,
-    EmptyRelation, Explain, Expr, Extension, LogicalPlan, LogicalPlanBuilder, Operator, PlanType,
-    SubqueryAlias, TableSource, ToStringifiedPlan, Union,
+    EmptyRelation, Explain, ExplainFormat, Expr, Extension, LogicalPlan, LogicalPlanBuilder,
+    Operator, PlanType, SubqueryAlias, TableSource, ToStringifiedPlan, Union,
 };
 use datafusion::optimizer::analyzer::type_coercion::TypeCoercionRewriter;
 use datafusion::optimizer::simplify_expressions::ConstEvaluator;
@@ -42,13 +42,13 @@ use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::{object_name_to_table_reference, PlannerContext, SqlToRel};
 use datafusion::sql::sqlparser::ast::{
-    Assignment, DataType as SQLDataType, Expr as SQLExpr, Expr as ASTExpr, Ident, ObjectName,
-    Offset, OrderByExpr, Query, SqlOption, Statement, TableAlias, TableFactor, TableWithJoins,
-    TimezoneInfo,
+    Assignment, AssignmentTarget, CreateTable as SQLCreateTable, DataType as SQLDataType, Delete,
+    Expr as SQLExpr, Expr as ASTExpr, Ident, Insert, ObjectName, Offset, OrderByExpr, Query,
+    SqlOption, Statement, TableAlias, TableFactor, TableWithJoins, TimezoneInfo,
 };
 use datafusion::sql::sqlparser::parser::ParserError;
 use datafusion::sql::TableReference;
-use lazy_static::__Deref;
+use lazy_static::__Deref as _;
 use meta::error::MetaError;
 use models::auth::bcrypt_verify;
 use models::auth::privilege::{
@@ -80,7 +80,7 @@ use spi::query::ast::{
     DatabaseConfig as ASTDatabaseConfig, DatabaseOptions as ASTDatabaseOptions,
     DescribeDatabase as DescribeDatabaseOptions, DescribeTable as DescribeTableOptions,
     DropVnode as ASTDropVnode, ExtStatement, MoveVnode as ASTMoveVnode,
-    ReplicaAdd as ASTReplicaAdd, ReplicaDestory as ASTReplicaDestory,
+    ReplicaAdd as ASTReplicaAdd, ReplicaDestroy as ASTReplicaDestory,
     ReplicaPromote as ASTReplicaPromote, ReplicaRemove as ASTReplicaRemove,
     ShowSeries as ASTShowSeries, ShowTagBody, ShowTagValues as ASTShowTagValues, UriLocation, With,
 };
@@ -95,7 +95,7 @@ use spi::query::logical_planner::{
     CreateUser, DDLPlan, DMLPlan, DatabaseObjectType, DeleteFromTable, DropDatabaseObject,
     DropGlobalObject, DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder,
     GlobalObjectType, GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan,
-    RecoverDatabase, RecoverTenant, ReplicaAdd, ReplicaDestory, ReplicaPromote, ReplicaRemove,
+    RecoverDatabase, RecoverTenant, ReplicaAdd, ReplicaDestroy, ReplicaPromote, ReplicaRemove,
     SYSPlan, TenantObjectType, TENANT_OPTION_LIMITER,
 };
 use spi::query::session::SessionCtx;
@@ -241,7 +241,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::RecoverTenant(stmt) => self.recovertenant_to_plan(stmt),
             ExtStatement::RecoverDatabase(stmt) => self.recoverdatabase_to_plan(stmt, session),
             ExtStatement::ShowReplicas => self.show_replicas_to_plan(),
-            ExtStatement::ReplicaDestory(stmt) => self.replica_destory_to_plan(stmt),
+            ExtStatement::ReplicaDestroy(stmt) => self.replica_destory_to_plan(stmt),
             ExtStatement::ReplicaAdd(stmt) => self.replica_add_to_plan(stmt),
             ExtStatement::ReplicaRemove(stmt) => self.replica_remove_to_plan(stmt),
             ExtStatement::ReplicaPromote(stmt) => self.replica_promote_to_plan(stmt),
@@ -270,22 +270,23 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 );
                 Ok(PlanWithPrivileges { plan, privileges })
             }
-            Statement::Insert {
-                table_name: sql_object_name,
+            Statement::Insert(Insert {
+                table: sql_object_name,
                 columns: sql_column_names,
                 source,
                 ..
-            } => {
+            }) => {
                 self.insert_to_plan(sql_object_name, sql_column_names, source, session)
                     .await
             }
-            Statement::Delete {
+            Statement::Delete(Delete {
                 tables,    // Not implemented by CnosDB
                 from,      // FROM <table>, always not empty
                 using,     // Not implemented by CnosDB
                 selection, // WHERE <selection>
-                returning, // Not implemented by CnosDB
-            } => {
+                returning, // Not implemented by CnosDB,
+                ..
+            }) => {
                 // DELETE <tables>, not implemented
                 if !tables.is_empty() {
                     return Err(QueryError::NotImplemented {
@@ -321,6 +322,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 from,
                 selection,
                 returning,
+                ..
             } => {
                 if returning.is_some() {
                     Err(QueryError::NotImplemented {
@@ -363,12 +365,14 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         // set
         let assigns = assignments
             .into_iter()
-            .map(|Assignment { mut id, value }| {
-                let col_name = id
-                    .pop()
-                    .map(normalize_ident)
-                    .map(Column::from_name)
-                    .ok_or_else(|| DataFusionError::Plan("Empty column id".to_string()))?;
+            .map(|Assignment { target, value }| {
+                let col_name = match &mut target {
+                    AssignmentTarget::ColumnName(object_name) => object_name.pop(),
+                    AssignmentTarget::Tuple(object_names) => object_names.pop(),
+                }
+                .map(normalize_ident)
+                .map(Column::from_name)
+                .ok_or_else(|| DataFusionError::Plan("Empty column id".to_string()))?;
 
                 // Validate that the assignment target column exists
                 df_schema.field_from_column(&col_name)?;
@@ -452,6 +456,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 vec![input_df_plan.to_stringified(PlanType::InitialLogicalPlan)];
             LogicalPlan::Explain(Explain {
                 verbose,
+                // TODO(zipper): support explain format.
+                explain_format: ExplainFormat::Indent,
                 plan: input_df_plan,
                 stringified_plans,
                 schema,
@@ -561,8 +567,33 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 }
                 TableFactor::Pivot { .. } => {
                     return Err(QueryError::NotImplemented {
-                        err: "Delete from pivot table".to_string(),
+                        err: "Delete from pivot".to_string(),
                     });
+                }
+                TableFactor::Function { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from function".to_string(),
+                    })
+                }
+                TableFactor::JsonTable { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from json table".to_string(),
+                    })
+                }
+                TableFactor::OpenJsonTable { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from open json table".to_string(),
+                    })
+                }
+                TableFactor::Unpivot { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from unpivot table".to_string(),
+                    })
+                }
+                TableFactor::MatchRecognize { .. } => {
+                    return Err(QueryError::NotImplemented {
+                        err: "Delete from match recognize table".to_string(),
+                    })
                 }
             }
         };
@@ -578,7 +609,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                     .df_planner
                     .sql_to_expr(expr, &df_schema, &mut Default::default())?;
 
-                let mut rewriter = TypeCoercionRewriter::new(Arc::new(df_schema));
+                let mut rewriter = TypeCoercionRewriter::new(&df_schema);
                 let expr = rewrite_preserving_name(sel, &mut rewriter)?;
                 let props = ExecutionProps::default();
                 let mut const_evaluator = ConstEvaluator::try_new(&props)?;
@@ -829,15 +860,14 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             name: _,
             columns,
             file_type,
-            has_header,
-            delimiter,
             location,
             table_partition_cols,
-            if_not_exists,
-            file_compression_type,
-            options,
             order_exprs,
+            if_not_exists,
+            temporary,
             unbounded,
+            options,
+            constraints,
         } = statement;
 
         // semantic checks
@@ -869,15 +899,15 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             name,
             location,
             file_type,
-            has_header,
-            delimiter,
             table_partition_cols,
             if_not_exists,
+            temporary: false,
             definition,
-            file_compression_type,
-            options,
             order_exprs: ordered_exprs,
             unbounded,
+            options,
+            constraints: Constraints::empty(),
+            column_defaults: HashMap::new(),
         })
     }
 
@@ -1475,8 +1505,9 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let mut sort_exprs = Vec::new();
         for OrderByExpr {
             expr,
-            asc,
-            nulls_first,
+            options: OrderByOptions { asc, nulls_first },
+            // TODO(zipper): support ClickHouse order-by-with-fill(from, to, step)
+            with_fill: _,
         } in exprs
         {
             let expr = self
@@ -2214,7 +2245,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     fn replica_destory_to_plan(&self, stmt: ASTReplicaDestory) -> QueryResult<PlanWithPrivileges> {
         let ASTReplicaDestory { replica_id } = stmt;
 
-        let plan = Plan::DDL(DDLPlan::ReplicaDestory(ReplicaDestory { replica_id }));
+        let plan = Plan::DDL(DDLPlan::ReplicaDestroy(ReplicaDestroy { replica_id }));
         Ok(PlanWithPrivileges {
             plan,
             privileges: vec![Privilege::Global(GlobalPrivilege::System)],
@@ -2274,14 +2305,14 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         stmt: Statement,
         session: &SessionCtx,
     ) -> QueryResult<PlanWithPrivileges> {
-        if let Statement::CreateTable {
+        if let Statement::CreateTable(SQLCreateTable {
             if_not_exists,
             name,
             columns,
             with_options,
             engine,
             ..
-        } = stmt
+        }) = stmt
         {
             let stream_type = engine
                 .ok_or_else(|| {
@@ -3113,7 +3144,9 @@ mod tests {
     use datafusion::error::Result;
     use datafusion::execution::memory_pool::UnboundedMemoryPool;
     use datafusion::logical_expr::logical_plan::AggWithGrouping;
-    use datafusion::logical_expr::{AggregateUDF, Extension, ScalarUDF, TableSource, TableType};
+    use datafusion::logical_expr::{
+        AggregateUDF, Extension, ScalarUDF, TableSource, TableType, WindowUDF,
+    };
     use datafusion::physical_plan::ExecutionPlan;
     use datafusion::sql::planner::ContextProvider;
     use datafusion::sql::TableReference;
@@ -3186,7 +3219,7 @@ mod tests {
     }
 
     impl ContextProvider for MockContext {
-        fn get_table_provider(&self, name: TableReference) -> Result<Arc<dyn TableSource>> {
+        fn get_table_source(&self, name: TableReference) -> Result<Arc<dyn TableSource>> {
             let schema = match name.table() {
                 "test_tb" => Ok(Schema::new(vec![
                     Field::new("field_int", DataType::Int32, false),
@@ -3210,6 +3243,10 @@ mod tests {
             unimplemented!()
         }
 
+        fn get_window_meta(&self, name: &str) -> Option<Arc<WindowUDF>> {
+            None
+        }
+
         fn get_variable_type(&self, _: &[String]) -> Option<DataType> {
             unimplemented!()
         }
@@ -3218,8 +3255,16 @@ mod tests {
             unimplemented!()
         }
 
-        fn get_window_meta(&self, _name: &str) -> Option<Arc<datafusion::logical_expr::WindowUDF>> {
-            None
+        fn udf_names(&self) -> Vec<String> {
+            vec![]
+        }
+
+        fn udaf_names(&self) -> Vec<String> {
+            vec![]
+        }
+
+        fn udwf_names(&self) -> Vec<String> {
+            vec![]
         }
     }
 

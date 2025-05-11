@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use config::common::TenantLimiterConfig;
 use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
-use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
+use datafusion::datasource::file_format::file_compression_type::FileCompressionType;
 use datafusion::logical_expr::type_coercion::aggregates::{
     DATES, NUMERICS, STRINGS, TIMES, TIMESTAMPS,
 };
@@ -14,7 +14,6 @@ use datafusion::logical_expr::{
     expr, expr_fn, CreateExternalTable, LogicalPlan as DFPlan, ReturnTypeFunction, ScalarUDF,
     Signature, Volatility,
 };
-use datafusion::physical_plan::functions::make_scalar_function;
 use datafusion::prelude::{col, Expr};
 use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SqlOption, Value};
 use datafusion::sql::sqlparser::parser::ParserError;
@@ -92,7 +91,7 @@ pub enum Plan {
 impl Plan {
     pub fn schema(&self) -> SchemaRef {
         match self {
-            Self::Query(p) => SchemaRef::from(p.df_plan.schema().as_ref()),
+            Self::Query(p) => p.df_plan.schema().inner().clone(),
             Self::DDL(p) => p.schema(),
             Self::DML(p) => p.schema(),
             Self::SYSTEM(p) => p.schema(),
@@ -162,7 +161,7 @@ pub enum DDLPlan {
 
     ShowReplicas,
 
-    ReplicaDestory(ReplicaDestory),
+    ReplicaDestroy(ReplicaDestroy),
 
     ReplicaAdd(ReplicaAdd),
 
@@ -352,7 +351,7 @@ pub struct CreateTenant {
 }
 
 #[derive(Debug, Clone)]
-pub struct ReplicaDestory {
+pub struct ReplicaDestroy {
     pub replica_id: ReplicationSetId,
 }
 
@@ -416,43 +415,48 @@ pub fn sql_option_to_alter_tenant_action(
     tenant: Tenant,
     option: SqlOption,
 ) -> std::result::Result<(AlterTenantAction, Privilege<Oid>), QueryError> {
-    let SqlOption { name, value } = option;
-    let tenant_id = *tenant.id();
-    let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.into_options());
+    if let SqlOption::KeyValue { key, value } = option {
+        let tenant_id = *tenant.id();
+        let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.into_options());
 
-    let privilege = match normalize_ident(&name).as_str() {
-        TENANT_OPTION_COMMENT => {
-            let value = parse_string_value(value).context(ParserSnafu)?;
-            tenant_options_builder.comment(value);
-            Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
-        }
-        TENANT_OPTION_LIMITER => {
-            let config =
-                serde_json::from_str::<TenantLimiterConfig>(parse_string_value(value).context(ParserSnafu)?.as_str())
-                    .map_err(|_| ParserError::ParserError("limiter format error:remote_initial,remote_refill,remote_interval,local_initial can't be empty".to_string())).context(ParserSnafu)?;
-            tenant_options_builder.limiter_config(config);
-            Privilege::Global(GlobalPrivilege::System)
-        }
-        TENANT_OPTION_DROP_AFTER => {
-            let drop_after_str = parse_string_value(value).context(ParserSnafu)?;
-            let drop_after = CnosDuration::new(&drop_after_str).ok_or_else(|| QueryError::Parser {
-                source: ParserError::ParserError(format!("{} is not a valid duration or duration overflow", drop_after_str)),
-            })?;
-            tenant_options_builder.drop_after(drop_after);
-            Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
-        }
-        _ => {
-            return Err(QueryError::Parser {
-                source: ParserError::ParserError(format!(
-                "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}], [{TENANT_OPTION_DROP_AFTER}] found [{}]",
-                name
-            )),
-            })
-        }
-    };
-    let tenant_options = tenant_options_builder
-        .build()
-        .context(TenantOptionsBuildFailSnafu)?;
+        let privilege = match normalize_ident(&key).as_str() {
+            TENANT_OPTION_COMMENT => {
+                let value = parse_string_value(value).context(ParserSnafu)?;
+                tenant_options_builder.comment(value);
+                Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
+            }
+            TENANT_OPTION_LIMITER => {
+                let config =
+                    serde_json::from_str::<TenantLimiterConfig>(parse_string_value(value).context(ParserSnafu)?.as_str())
+                        .map_err(|_| ParserError::ParserError("limiter format error:remote_initial,remote_refill,remote_interval,local_initial can't be empty".to_string())).context(ParserSnafu)?;
+                tenant_options_builder.limiter_config(config);
+                Privilege::Global(GlobalPrivilege::System)
+            }
+            TENANT_OPTION_DROP_AFTER => {
+                let drop_after_str = parse_string_value(value).context(ParserSnafu)?;
+                let drop_after = CnosDuration::new(&drop_after_str).ok_or_else(|| QueryError::Parser {
+                    source: ParserError::ParserError(format!("{} is not a valid duration or duration overflow", drop_after_str)),
+                })?;
+                tenant_options_builder.drop_after(drop_after);
+                Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
+            }
+            _ => {
+                return Err(QueryError::Parser {
+                    source: ParserError::ParserError(format!(
+                    "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}], [{TENANT_OPTION_DROP_AFTER}] found [{}]",
+                    key
+                )),
+                })
+            }
+        };
+        let tenant_options = tenant_options_builder
+            .build()
+            .context(TenantOptionsBuildFailSnafu)?;
+        return Ok((
+            AlterTenantAction::SetOption(Box::new(tenant_options)),
+            privilege,
+        ));
+    }
     Ok((
         AlterTenantAction::SetOption(Box::new(tenant_options)),
         privilege,

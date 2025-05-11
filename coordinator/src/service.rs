@@ -658,8 +658,8 @@ impl Coordinator for CoordService {
 
         let mut write_bytes: usize = 0;
         let mut precision = Precision::NS;
-        let tenant = table_schema.tenant.as_str();
-        let db = table_schema.db.as_str();
+        let tenant = table_schema.tenant.as_ref();
+        let db = table_schema.db.as_ref();
         let meta_client = self.meta.tenant_meta(tenant).await.ok_or_else(|| {
             CoordinatorError::TenantNotFound {
                 name: tenant.to_string(),
@@ -668,14 +668,14 @@ impl Coordinator for CoordService {
 
         let mut repl_idx: HashMap<ReplicationSet, Vec<u32>> = HashMap::new();
         let schema = record_batch.schema().fields.clone();
-        let table_name = table_schema.name.as_str();
+        let table_name = table_schema.name.as_ref();
         let columns = record_batch.columns();
         for idx in 0..record_batch.num_rows() {
             let mut hasher = BkdrHasher::new();
             hasher.hash_with(table_name.as_bytes());
             let mut ts = i64::MAX;
             let mut has_ts = false;
-            let mut has_fileds = false;
+            let mut has_fields = false;
             for (column, schema) in columns.iter().zip(schema.iter()) {
                 let name = schema.name().as_str();
                 let tskv_schema_column =
@@ -686,10 +686,10 @@ impl Coordinator for CoordService {
                         .build()
                     })?;
                 if name == TIME_FIELD_NAME {
-                    let precsion_and_value =
+                    let precision_and_value =
                         get_precision_and_value_from_arrow_column(column, idx)?;
-                    precision = precsion_and_value.0;
-                    ts = timestamp_convert(precision, db_precision, precsion_and_value.1)
+                    precision = precision_and_value.0;
+                    ts = timestamp_convert(precision, db_precision, precision_and_value.1)
                         .ok_or_else(|| {
                             CommonSnafu {
                                 msg: "timestamp overflow".to_string(),
@@ -715,7 +715,7 @@ impl Coordinator for CoordService {
 
                 if let ColumnType::Field(_) = tskv_schema_column.column_type {
                     if !column.is_null(idx) {
-                        has_fileds = true;
+                        has_fields = true;
                     }
                 }
             }
@@ -730,7 +730,7 @@ impl Coordinator for CoordService {
                 .build());
             }
 
-            if !has_fileds {
+            if !has_fields {
                 return Err(FieldsIsEmptySnafu.build());
             }
 
@@ -938,7 +938,7 @@ impl Coordinator for CoordService {
                 )
             }
 
-            ReplicationCmdType::DestoryRaftGroup(replica_id) => {
+            ReplicationCmdType::DestroyRaftGroup(replica_id) => {
                 let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
                 (
                     AdminCommand {
@@ -1116,7 +1116,7 @@ impl Coordinator for CoordService {
                 series_keys.push(
                     SeriesKey {
                         tags,
-                        table: table_name.clone(),
+                        table: table_name.to_string(),
                     }
                     .encode(),
                 );

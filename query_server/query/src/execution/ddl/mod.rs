@@ -21,7 +21,7 @@ use self::grant_revoke::GrantRevokeTask;
 use self::recover_database::RecoverDatabaseTask;
 use self::recover_tenant::RecoverTenantTask;
 use self::replica_add::ReplicaAddTask;
-use self::replica_destory::ReplicaDestoryTask;
+use self::replica_destory::ReplicaDestroyTask;
 use self::replica_promote::ReplicaPromoteTask;
 use self::replica_remove::ReplicaRemoveTask;
 use self::show_replica::ShowReplicasTask;
@@ -191,8 +191,8 @@ impl DDLDefinitionTaskFactory {
             }
             DDLPlan::RecoverTenant(sub_plan) => Box::new(RecoverTenantTask::new(sub_plan.clone())),
             DDLPlan::ShowReplicas => Box::new(ShowReplicasTask::new()),
-            DDLPlan::ReplicaDestory(sub_plan) => {
-                Box::new(ReplicaDestoryTask::new(sub_plan.clone()))
+            DDLPlan::ReplicaDestroy(sub_plan) => {
+                Box::new(ReplicaDestroyTask::new(sub_plan.clone()))
             }
             DDLPlan::ReplicaAdd(sub_plan) => Box::new(ReplicaAddTask::new(sub_plan.clone())),
             DDLPlan::ReplicaRemove(sub_plan) => Box::new(ReplicaRemoveTask::new(sub_plan.clone())),

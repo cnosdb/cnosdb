@@ -5,7 +5,7 @@ use arrow::compute::interleave;
 use arrow::datatypes::SchemaRef;
 use arrow_array::{Array, RecordBatch};
 use datafusion::common::DataFusionError;
-use datafusion::physical_plan::sorts::cursor::{FieldArray, FieldValues};
+use datafusion::physical_plan::sorts::cursor::{CursorArray, CursorValues};
 use snafu::ResultExt;
 
 use crate::error::{ArrowSnafu, CommonSnafu};
@@ -21,7 +21,7 @@ struct BatchCursor {
 
 /// Provides an API to incrementally build a [`RecordBatch`] from partitioned [`RecordBatch`]
 #[derive(Debug)]
-pub struct BatchMergeBuilder<T: FieldArray> {
+pub struct BatchMergeBuilder<T: CursorArray> {
     /// The schema of the RecordBatches yielded by this stream
     schema: SchemaRef,
 
