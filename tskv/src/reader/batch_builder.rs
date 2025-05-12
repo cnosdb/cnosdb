@@ -43,7 +43,7 @@ pub struct BatchMergeBuilder<T: CursorArray> {
     phantom: PhantomData<T>,
 }
 
-impl<T: FieldArray> BatchMergeBuilder<T> {
+impl<T: CursorArray> BatchMergeBuilder<T> {
     /// Create a new [`BatchMergeBuilder`] with the provided `stream_count` and `batch_size`
     pub fn new(schema: SchemaRef, stream_count: usize, batch_size: usize) -> Self {
         let field_len = schema.fields.len();
@@ -89,7 +89,6 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
                     .downcast_ref::<T>()
                     .expect("field values");
                 let last_values = last_array.values();
-                let last_value = last_values.value(*last_row_idx);
 
                 let now_batch_idx = cursor.batch_idx;
                 let now_row_idx = row_idx;
@@ -101,9 +100,8 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
                     .downcast_ref::<T>()
                     .expect("field values");
                 let now_values = now_array.values();
-                let now_value = now_values.value(row_idx);
 
-                match T::Values::compare(last_value, now_value) {
+                match T::Values::compare(&last_values, *last_row_idx, &now_values, row_idx) {
                     Ordering::Equal => {
                         *last_batch_idx = now_batch_idx;
                         *last_column_idx = now_column_idx;
