@@ -6,12 +6,12 @@ use std::str::FromStr;
 use datafusion::common::parsers::CompressionTypeVariant;
 use datafusion::sql::parser::CreateExternalTable;
 use datafusion::sql::sqlparser::ast::{
-    DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, SqlOption, TableFactor, Value,
+    DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, TableFactor, Value as SqlValue,
 };
 use datafusion::sql::sqlparser::dialect::keywords::Keyword;
 use datafusion::sql::sqlparser::dialect::Dialect;
 use datafusion::sql::sqlparser::parser::{IsOptional, Parser, ParserError};
-use datafusion::sql::sqlparser::tokenizer::{Token, TokenWithLocation, Tokenizer};
+use datafusion::sql::sqlparser::tokenizer::{Span as SqlSpan, Token, TokenWithLocation, Tokenizer};
 use models::codec::Encoding;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use serde_json::Value as JsonValue;
@@ -24,7 +24,7 @@ use spi::query::ast::{
     DatabaseConfig, DatabaseOptions, DescribeDatabase, DescribeTable, DropDatabaseObject,
     DropGlobalObject, DropTenantObject, DropVnode, Explain, ExtStatement, GrantRevoke, MoveVnode,
     OutputMode, Privilege, RecoverDatabase, RecoverTenant, ShowSeries, ShowTagBody, ShowTagValues,
-    Trigger, UriLocation, With,
+    SqlOption, Trigger, UriLocation, With,
 };
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
@@ -32,6 +32,16 @@ use spi::ParserSnafu;
 use trace::debug;
 
 use super::dialect::CnosDBDialect;
+
+/// For legacy SQL `STORED AS csv WITH HEADER ROW`,
+/// now should be `STORED AS csv OPTIONS ('format.has_header' 'true')`
+pub const EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER: &str = "format.has_header";
+/// For legacy SQL `STORED AS csv WITH DELIMITER ','`,
+/// now should be `STORED AS csv OPTIONS ('format.delimiter' ',')`
+pub const EXTERNAL_TABLE_OPTION_CSV_DELIMITER: &str = "format.delimiter";
+/// For legacy SQL `STORED AS json COMPRESSION TYPE gzip`,
+/// now should be `STORED AS json OPTIONS ('format.compression' 'gzip')`
+pub const EXTERNAL_TABLE_OPTION_COMPRESSION: &str = "format.compression";
 
 // support tag token
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,8 +132,11 @@ enum CnosKeyWord {
     NODE_ID,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     PROMOTE,
+    #[deprecated(note = "This is a typo, use DESTROY instead")]
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     DESTORY,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    DESTROY,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     REPLICAS,
 
@@ -185,7 +198,8 @@ impl FromStr for CnosKeyWord {
             "REPLICA_ID" => Ok(CnosKeyWord::REPLICA_ID),
             "NODE_ID" => Ok(CnosKeyWord::NODE_ID),
             "PROMOTE" => Ok(CnosKeyWord::PROMOTE),
-            "DESTORY" => Ok(CnosKeyWord::DESTORY),
+            "DESTORY" => Ok(CnosKeyWord::DESTROY),
+            "DESTROY" => Ok(CnosKeyWord::DESTROY),
             "REPLICAS" => Ok(CnosKeyWord::REPLICAS),
             "MAX_MEMCACHE_SIZE" => Ok(CnosKeyWord::MAX_MEMCACHE_SIZE),
             "MEMCACHE_PARTITIONS" => Ok(CnosKeyWord::MEMCACHE_PARTITIONS),
@@ -563,7 +577,7 @@ impl<'a> ExtParser<'a> {
 
     /// Parse a SQL DESCRIBE TABLE statement
     fn parse_describe_table(&mut self) -> Result<ExtStatement> {
-        let table_name = self.parser.parse_object_name()?;
+        let table_name = self.parser.parse_object_name(true)?;
 
         let describe = DescribeTable { table_name };
 
@@ -596,7 +610,7 @@ impl<'a> ExtParser<'a> {
     }
 
     fn parse_alter_table(&mut self) -> Result<ExtStatement> {
-        let table_name = self.parser.parse_object_name()?;
+        let table_name = self.parser.parse_object_name(true)?;
 
         if self.parser.parse_keyword(Keyword::ADD) {
             self.parse_alter_table_add_column(table_name)
@@ -834,19 +848,19 @@ impl<'a> ExtParser<'a> {
         if has_comment_option {
             return Ok(SqlOption {
                 name: Ident::new("comment"),
-                value: Value::SingleQuotedString(comment.unwrap().to_string()),
+                value: SqlValue::SingleQuotedString(comment.unwrap().to_string()),
             });
         }
         if has_drop_after_option {
             return Ok(SqlOption {
                 name: Ident::new("drop_after"),
-                value: Value::SingleQuotedString(drop_after.unwrap().to_string()),
+                value: SqlValue::SingleQuotedString(drop_after.unwrap().to_string()),
             });
         }
         if has_limiter_option {
             return Ok(SqlOption {
                 name: Ident::new("_limiter"),
-                value: Value::SingleQuotedString(JsonValue::Object(limiter_json).to_string()),
+                value: SqlValue::SingleQuotedString(JsonValue::Object(limiter_json).to_string()),
             });
         }
         Err(ParserError::ParserError(
@@ -907,7 +921,7 @@ impl<'a> ExtParser<'a> {
     /// Parses the set of valid formats
     /// This is a copy of the equivalent implementation in Datafusion.
     fn parse_file_format(&mut self) -> Result<String, ParserError> {
-        let TokenWithLocation { token, location: _ } = self.parser.next_token();
+        let TokenWithSpan { token, .. } = self.parser.next_token();
         match token {
             Token::Word(w) => parse_file_type(&w.value),
             unexpected => self.expected("one of PARQUET, NDJSON, or CSV", unexpected),
@@ -919,7 +933,7 @@ impl<'a> ExtParser<'a> {
         let if_not_exists =
             self.parser
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
-        let table_name = self.parser.parse_object_name()?;
+        let table_name = self.parser.parse_object_name(true)?;
         check_name_not_contain_illegal_character(&table_name)?;
         let (columns, _) = self.parser.parse_columns()?;
 
@@ -933,6 +947,47 @@ impl<'a> ExtParser<'a> {
             table_partition_cols: Option<Vec<String>>,
             order_exprs: Vec<Vec<OrderByExpr>>,
             options: Option<HashMap<String, String>>,
+        }
+        impl Builder {
+            fn rewrite_options(mut self) -> Self {
+                if self.options.is_none()
+                    && self.has_header.is_none()
+                    && self.delimiter.is_none()
+                    && self.file_compression_type.is_none()
+                {
+                    return;
+                }
+                let (mut options, new_options) = match self.options {
+                    Some(opt) => (opt, false),
+                    None => (HashMap::new(), true),
+                };
+                if let Some(has_header) = self.has_header {
+                    if new_options || !opt.contains_key(EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER) {
+                        options.insert(
+                            EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER.to_string(),
+                            has_header.to_string(),
+                        );
+                    }
+                }
+                if let Some(delimiter) = self.delimiter {
+                    if new_options || !opt.contains_key(EXTERNAL_TABLE_OPTION_CSV_DELIMITER) {
+                        options.insert(
+                            EXTERNAL_TABLE_OPTION_CSV_DELIMITER.to_string(),
+                            delimiter.to_string(),
+                        );
+                    }
+                }
+                if let Some(compression) = self.file_compression_type {
+                    if new_options || !opt.contains_key(EXTERNAL_TABLE_OPTION_COMPRESSION) {
+                        options.insert(
+                            EXTERNAL_TABLE_OPTION_COMPRESSION.to_string(),
+                            file_compression_type.to_string(),
+                        );
+                    }
+                }
+                self.options = Some(options);
+                self
+            }
         }
         let mut builder = Builder::default();
 
@@ -1021,21 +1076,24 @@ impl<'a> ExtParser<'a> {
             ));
         }
 
+        builder = builder.rewrite_options();
+
+        let delimiter = builder.delimiter.unwrap_or(',');
+        let file_compression_type = builder
+            .file_compression_type
+            .unwrap_or(CompressionTypeVariant::UNCOMPRESSED);
         let create = CreateExternalTable {
             name: table_name.to_string(),
             columns,
             file_type: builder.file_type.unwrap(),
-            has_header: builder.has_header.unwrap_or(false),
-            delimiter: builder.delimiter.unwrap_or(','),
             location: builder.location.unwrap(),
             table_partition_cols: builder.table_partition_cols.unwrap_or(vec![]),
             order_exprs: builder.order_exprs,
             if_not_exists,
-            file_compression_type: builder
-                .file_compression_type
-                .unwrap_or(CompressionTypeVariant::UNCOMPRESSED),
+            temporary: false,
             unbounded,
-            options: builder.options.unwrap_or(HashMap::new()),
+            options: builder.options,
+            constraints: vec![],
         };
         Ok(ExtStatement::CreateExternalTable(create))
     }
@@ -1044,7 +1102,7 @@ impl<'a> ExtParser<'a> {
         let if_not_exists =
             self.parser
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
-        let table_name = self.parser.parse_object_name()?;
+        let table_name = self.parser.parse_object_name(true)?;
         check_name_not_contain_illegal_character(&table_name)?;
         let columns = self.parse_cnos_columns()?;
         let create = CreateTable {
@@ -1419,21 +1477,21 @@ impl<'a> ExtParser<'a> {
         if let Some(drop_after) = drop_after {
             with_options.push(SqlOption {
                 name: Ident::new("drop_after"),
-                value: Value::SingleQuotedString(drop_after),
+                value: SqlValue::SingleQuotedString(drop_after),
             });
         }
         // 将 comment 和 drop_after 添加到 with_options 中
         if let Some(comment) = comment {
             with_options.push(SqlOption {
                 name: Ident::new("comment"),
-                value: Value::SingleQuotedString(comment),
+                value: SqlValue::SingleQuotedString(comment),
             });
         }
         // 仅在有有效的选项时才添加 _limiter
         if has_limiter_option && !limiter_json.is_empty() {
             with_options.push(SqlOption {
                 name: Ident::new("_limiter"),
-                value: Value::SingleQuotedString(JsonValue::Object(limiter_json).to_string()),
+                value: SqlValue::SingleQuotedString(JsonValue::Object(limiter_json).to_string()),
             });
         }
 
@@ -1470,7 +1528,7 @@ impl<'a> ExtParser<'a> {
 
             let val = self.parser.parse_value()?;
             // 检查值是否为非负数
-            if let Value::Number(num, _) = &val {
+            if let SqlValue::Number(num, _) = &val {
                 let parsed_num = num
                     .parse::<f64>()
                     .map_err(|_| ParserError::ParserError(key.value.clone()))?;
@@ -1522,7 +1580,7 @@ impl<'a> ExtParser<'a> {
             }
             let val = self.parser.parse_value()?;
             // 检查值是否为非负数
-            if let Value::Number(num, _) = &val {
+            if let SqlValue::Number(num, _) = &val {
                 let parsed_num = num
                     .parse::<f64>()
                     .map_err(|_| ParserError::ParserError(key.value.clone()))?;
@@ -1546,7 +1604,7 @@ impl<'a> ExtParser<'a> {
         }
 
         // 使用 collect() 将数组转换为 serde_json::Map
-        let result_map: serde_json::Map<String, serde_json::Value> = [
+        let result_map: serde_json::Map<String, JsonValue> = [
             ("remote_bucket".to_string(), JsonValue::Object(remote_map)),
             ("local_bucket".to_string(), JsonValue::Object(local_map)),
         ]
@@ -1557,15 +1615,15 @@ impl<'a> ExtParser<'a> {
         Ok(JsonValue::Object(result_map))
     }
 
-    fn sql_value_to_json_value(value: Value) -> Result<JsonValue, ParserError> {
+    fn sql_value_to_json_value(value: SqlValue) -> Result<JsonValue, ParserError> {
         match value {
-            Value::Number(n, _) => Ok(JsonValue::Number(
+            SqlValue::Number(n, _) => Ok(JsonValue::Number(
                 n.parse::<serde_json::Number>()
                     .map_err(|e| ParserError::TokenizerError(e.to_string()))?,
             )),
-            Value::SingleQuotedString(s) => Ok(JsonValue::String(s)),
-            Value::Boolean(b) => Ok(JsonValue::Bool(b)),
-            Value::Null => Ok(JsonValue::Null),
+            SqlValue::SingleQuotedString(s) => Ok(JsonValue::String(s)),
+            SqlValue::Boolean(b) => Ok(JsonValue::Bool(b)),
+            SqlValue::Null => Ok(JsonValue::Null),
             _ => Err(ParserError::TokenizerError(
                 "Unsupported value type".to_string(),
             )),
@@ -1759,12 +1817,18 @@ impl<'a> ExtParser<'a> {
                 alias: None,
             }
         } else {
-            let name = self.parser.parse_object_name()?;
+            let name = self.parser.parse_object_name(true)?;
             TableFactor::Table {
                 name,
                 alias: None,
                 args: None,
                 with_hints: vec![],
+                version: None,
+                with_ordinality: false,
+                partitions: vec![],
+                json_path: None,
+                sample: None,
+                index_hints: vec![],
             }
         };
 
@@ -1794,7 +1858,7 @@ impl<'a> ExtParser<'a> {
             }
             _ => {
                 // COPY INTO <table> FROM <location>
-                let table_name = self.parser.parse_object_name()?;
+                let table_name = self.parser.parse_object_name(true)?;
                 self.parse_copy_into_table(table_name)?
             }
         };
@@ -1882,7 +1946,7 @@ impl<'a> ExtParser<'a> {
     fn parse_drop(&mut self) -> Result<ExtStatement> {
         let ast = if self.parser.parse_keyword(Keyword::TABLE) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
-            let object_name = self.parser.parse_object_name()?;
+            let object_name = self.parser.parse_object_name(false)?;
             ExtStatement::DropDatabaseObject(DropDatabaseObject {
                 object_name,
                 if_exist,
@@ -2003,6 +2067,7 @@ impl<'a> ExtParser<'a> {
         }
     }
 
+    #[allow(deprecated)]
     fn parse_replica(&mut self) -> Result<ExtStatement> {
         if self.parser.parse_keyword(Keyword::ADD) {
             if !self.parse_cnos_keyword(CnosKeyWord::REPLICA_ID) {
@@ -2043,7 +2108,9 @@ impl<'a> ExtParser<'a> {
                 replica_id,
                 node_id,
             }))
-        } else if self.parse_cnos_keyword(CnosKeyWord::DESTORY) {
+        } else if self.parse_cnos_keyword(CnosKeyWord::DESTORY)
+            || self.parse_cnos_keyword(CnosKeyWord::DESTROY)
+        {
             if !self.parse_cnos_keyword(CnosKeyWord::REPLICA_ID) {
                 return parser_err!("expected REPLICA_ID, after ADD");
             }
@@ -2212,8 +2279,10 @@ mod tests {
     use std::ops::Deref;
 
     use datafusion::sql::sqlparser::ast::{
-        ColumnDef, Ident, ObjectName, SetExpr, Statement, TableFactor, TimezoneInfo, Value,
+        ColumnDef, Ident, ObjectName, SetExpr, Statement, TableFactor, TimezoneInfo,
+        Value as SqlValue,
     };
+    use datafusion::sql::sqlparser::tokenizer::Span;
     use spi::query::ast::{AlterTable, ExtStatement, ShowStreams, UriLocation};
     use spi::query::logical_planner::TenantObjectType;
 
@@ -2232,9 +2301,9 @@ mod tests {
             name: Ident {
                 value: name.into(),
                 quote_style: None,
+                span: SqlSpan::empty(),
             },
             data_type,
-            collation: None,
             options: vec![],
         }
     }
@@ -2545,20 +2614,22 @@ mod tests {
         assert_eq!(statements.len(), 1);
         match statements[0] {
             ExtStatement::SqlStatement(ref stmt) => match stmt.deref() {
-                Statement::Insert {
+                Statement::Insert(Insert {
                     table_name: ref sql_object_name,
                     columns: ref sql_column_names,
                     source: _,
                     ..
-                } => {
+                }) => {
                     let expect_table_name = &ObjectName(vec![
                         Ident {
                             value: "public".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                         Ident {
                             value: "test".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                     ]);
 
@@ -2566,22 +2637,27 @@ mod tests {
                         Ident {
                             value: "TIME".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                         Ident {
                             value: "ta".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                         Ident {
                             value: "tb".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                         Ident {
                             value: "fa".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                         Ident {
                             value: "fb".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                     ];
 
@@ -2606,20 +2682,22 @@ mod tests {
         assert_eq!(statements.len(), 1);
         match statements[0] {
             ExtStatement::SqlStatement(ref stmt) => match stmt.deref() {
-                Statement::Insert {
+                Statement::Insert(Insert {
                     table_name: ref sql_object_name,
                     columns: ref sql_column_names,
                     source,
                     ..
-                } => {
+                }) => {
                     let expect_table_name = &ObjectName(vec![
                         Ident {
                             value: "public".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                         Ident {
                             value: "test_insert_subquery".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                     ]);
 
@@ -2627,22 +2705,27 @@ mod tests {
                         Ident {
                             value: "TIME".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                         Ident {
                             value: "ta".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                         Ident {
                             value: "tb".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                         Ident {
                             value: "fa".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                         Ident {
                             value: "fb".to_string(),
                             quote_style: None,
+                            span: SqlSpan::empty(),
                         },
                     ];
 
@@ -2671,6 +2754,7 @@ mod tests {
                     name: Ident {
                         value: "test".to_string(),
                         quote_style: None,
+                        span: SqlSpan::empty(),
                     },
                     if_not_exists: false,
                     options: DatabaseOptions {
@@ -2706,6 +2790,7 @@ mod tests {
                     name: Ident {
                         value: "test".to_string(),
                         quote_style: None,
+                        span: SqlSpan::empty(),
                     },
                     if_not_exists: false,
                     options: DatabaseOptions {
@@ -2833,7 +2918,7 @@ mod tests {
             copy_target,
             file_format_options: vec![SqlOption {
                 name: "type".into(),
-                value: Value::SingleQuotedString("csv".to_string()),
+                value: SqlValue::SingleQuotedString("csv".to_string()),
             }],
             copy_options: vec![],
         });
@@ -2873,12 +2958,17 @@ mod tests {
             })
         );
 
-        let sql1 = "replica destory replica_id 111;";
-        let statement = ExtParser::parse_sql(sql1).unwrap();
-        assert_eq!(
-            statement[0],
-            ExtStatement::ReplicaDestroy(ast::ReplicaDestroy { replica_id: 111 })
-        );
+        let sql1_list = vec![
+            "replica destory replica_id 111;",
+            "replica destroy replica_id 111;",
+        ];
+        for sql1 in sql1_list {
+            let statement = ExtParser::parse_sql(sql1).unwrap();
+            assert_eq!(
+                statement[0],
+                ExtStatement::ReplicaDestroy(ast::ReplicaDestroy { replica_id: 111 })
+            );
+        }
 
         let sql1 = "show replicas;";
         let statement = ExtParser::parse_sql(sql1).unwrap();
@@ -2959,17 +3049,23 @@ mod tests {
                 alias: None,
                 args: None,
                 with_hints: vec![],
+                version: None,
+                with_ordinality: false,
+                partitions: vec![],
+                json_path: None,
+                sample: None,
+                index_hints: vec![],
             },
             location: UriLocation {
                 path: "s3://bucket/path".to_string(),
                 connection_options: vec![
                     SqlOption {
                         name: "xx".into(),
-                        value: Value::SingleQuotedString("a".to_string()),
+                        value: SqlValue::SingleQuotedString("a".to_string()),
                     },
                     SqlOption {
                         name: "sss".into(),
-                        value: Value::SingleQuotedString("ss".to_string()),
+                        value: SqlValue::SingleQuotedString("ss".to_string()),
                     },
                 ],
             },
@@ -2979,7 +3075,7 @@ mod tests {
             copy_target,
             file_format_options: vec![SqlOption {
                 name: "type".into(),
-                value: Value::SingleQuotedString("csv".to_string()),
+                value: SqlValue::SingleQuotedString("csv".to_string()),
             }],
             copy_options: vec![],
         });
@@ -3064,14 +3160,12 @@ mod tests {
 
         match statement {
             ExtStatement::CreateStreamTable(s) => {
-                if let Statement::CreateTable {
+                if let Statement::CreateTable(CreateTable {
                     if_not_exists,
                     name,
                     columns,
-                    with_options,
-                    engine,
                     ..
-                } = s
+                }) = s
                 {
                     let columns_expected = vec![
                         make_column_def("time", DataType::Timestamp(None, TimezoneInfo::None)),
@@ -3082,15 +3176,15 @@ mod tests {
                     let with_options_expected = vec![
                         SqlOption {
                             name: "db".into(),
-                            value: Value::SingleQuotedString("public".into()),
+                            value: SqlValue::SingleQuotedString("public".into()),
                         },
                         SqlOption {
                             name: "table".into(),
-                            value: Value::SingleQuotedString("readings_kv".into()),
+                            value: SqlValue::SingleQuotedString("readings_kv".into()),
                         },
                         SqlOption {
                             name: "event_time_column".into(),
-                            value: Value::SingleQuotedString("time".into()),
+                            value: SqlValue::SingleQuotedString("time".into()),
                         },
                     ];
 
@@ -3147,7 +3241,7 @@ mod tests {
                     assert_eq!(1, assignments.len());
                     assert_eq!(Ident::from("tag1"), assignments[0].id[0]);
                     assert_eq!(
-                        Expr::Value(Value::SingleQuotedString("1".into())),
+                        Expr::Value(SqlValue::SingleQuotedString("1".into())),
                         assignments[0].value
                     );
                     assert!(from.is_none());
@@ -3190,20 +3284,21 @@ mod tests {
                     name: Ident {
                         value: "test_tenant".to_string(),
                         quote_style: None,
+                        span: SqlSpan::empty(),
                     },
                     if_not_exists: false,
                     with_options: vec![
                         SqlOption {
                             name: "drop_after".into(),
-                            value: Value::SingleQuotedString("10d".to_string()),
+                            value: SqlValue::SingleQuotedString("10d".to_string()),
                         },
                         SqlOption {
                             name: "comment".into(),
-                            value: Value::SingleQuotedString("test tenant".to_string()),
+                            value: SqlValue::SingleQuotedString("test tenant".to_string()),
                         },
                         SqlOption {
                             name: "_limiter".into(),
-                            value: Value::SingleQuotedString(
+                            value: SqlValue::SingleQuotedString(
                                 serde_json::json!({
                                         "object_config": {
                                             "max_users_number": 1,

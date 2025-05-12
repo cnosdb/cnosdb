@@ -2,13 +2,12 @@ use std::fmt::Write as _;
 use std::str::FromStr as _;
 
 use datafusion::datasource::file_format::file_compression_type::FileCompressionType;
-use datafusion::sql::sqlparser::ast::escape_double_quote_string;
+use datafusion::sql::sqlparser::ast::{escape_double_quote_string, Value as SqlValue};
 
 use crate::arrow::arrow_data_type_to_sql_data_type;
 use crate::auth::role::CustomTenantRole;
 use crate::auth::user::UserDesc;
 use crate::codec::Encoding;
-use crate::datafusion::SqlParserValue;
 use crate::errors::DumpSnafu;
 use crate::oid::{Identifier, Oid};
 use crate::schema::database_schema::DatabaseSchema;
@@ -21,7 +20,7 @@ use crate::ModelError;
 
 type Result<T, E = ModelError> = std::result::Result<T, E>;
 
-pub fn sql_option_to_sql_str(opts: Vec<Option<(&str, SqlParserValue)>>) -> String {
+pub fn sql_option_to_sql_str(opts: Vec<Option<(&str, SqlValue)>>) -> String {
     opts.into_iter()
         .flatten()
         .map(|(k, v)| format!("{k}={}", v))
@@ -386,8 +385,8 @@ impl ToDDLSql for ExternalTableSchema {
                     &mut sql,
                     did_write,
                     true,
-                    SqlParserValue::SingleQuotedString(k.clone()),
-                    SqlParserValue::SingleQuotedString(v.clone()),
+                    SqlValue::SingleQuotedString(k.clone()),
+                    SqlValue::SingleQuotedString(v.clone()),
                 );
             }
         }
@@ -396,7 +395,7 @@ impl ToDDLSql for ExternalTableSchema {
         sql.push_str(
             format!(
                 " location {};",
-                SqlParserValue::SingleQuotedString(self.location.to_string())
+                SqlValue::SingleQuotedString(self.location.to_string())
             )
             .as_str(),
         );
@@ -461,14 +460,11 @@ impl ToDDLSql for StreamTable {
         let watermark_delay = self.watermark().delay;
 
         let mut options = vec![
-            format!("db={}", SqlParserValue::SingleQuotedString(db.to_string())),
-            format!(
-                "table={}",
-                SqlParserValue::SingleQuotedString(table.to_string())
-            ),
+            format!("db={}", SqlValue::SingleQuotedString(db.to_string())),
+            format!("table={}", SqlValue::SingleQuotedString(table.to_string())),
             format!(
                 "event_time_column={}",
-                SqlParserValue::SingleQuotedString(event_time_column.to_string())
+                SqlValue::SingleQuotedString(event_time_column.to_string())
             ),
         ];
 
@@ -476,7 +472,7 @@ impl ToDDLSql for StreamTable {
             let watermark_delay_str = format!("{}ms", watermark_delay.as_millis());
             options.push(format!(
                 "watermark_delay={})",
-                SqlParserValue::SingleQuotedString(watermark_delay_str)
+                SqlValue::SingleQuotedString(watermark_delay_str)
             ));
         }
 

@@ -3,7 +3,7 @@ use std::fmt::{self, Debug};
 use std::hash::{Hash, Hasher};
 
 use datafusion::common::{DFSchemaRef, OwnedTableReference};
-use datafusion::logical_expr::logical_plan::AggWithGrouping;
+use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
 use spi::query::datasource::stream::StreamProviderRef;
@@ -20,7 +20,7 @@ pub struct StreamScanPlanNode {
     pub projected_schema: DFSchemaRef,
     /// Optional expressions to be used as filters by the table provider
     pub filters: Vec<Expr>,
-    pub agg_with_grouping: Option<AggWithGrouping>,
+    pub aggregate: Option<TableScanAggregate>,
 }
 
 impl Debug for StreamScanPlanNode {
@@ -37,7 +37,7 @@ impl Hash for StreamScanPlanNode {
         self.projection.hash(state);
         self.projected_schema.hash(state);
         self.filters.hash(state);
-        self.agg_with_grouping.hash(state);
+        self.aggregate.hash(state);
     }
 }
 
@@ -47,7 +47,7 @@ impl PartialEq for StreamScanPlanNode {
             && self.projection == other.projection
             && self.projected_schema == other.projected_schema
             && self.filters == other.filters
-            && self.agg_with_grouping == other.agg_with_grouping
+            && self.aggregate == other.aggregate
     }
 }
 
@@ -68,7 +68,7 @@ impl UserDefinedLogicalNodeCore for StreamScanPlanNode {
     }
 
     fn expressions(&self) -> Vec<Expr> {
-        if self.agg_with_grouping.is_none() {
+        if self.aggregate.is_none() {
             return self.filters.to_vec();
         }
 
@@ -86,7 +86,7 @@ impl UserDefinedLogicalNodeCore for StreamScanPlanNode {
     fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
         assert_eq!(inputs.len(), 0, "input size inconsistent");
 
-        if self.agg_with_grouping.is_some() {
+        if self.aggregate.is_some() {
             self.clone()
         } else {
             Self {
@@ -95,7 +95,7 @@ impl UserDefinedLogicalNodeCore for StreamScanPlanNode {
                 projection: self.projection.clone(),
                 projected_schema: self.projected_schema.clone(),
                 filters: exprs,
-                agg_with_grouping: self.agg_with_grouping.clone(),
+                aggregate: self.aggregate.clone(),
             }
         }
     }

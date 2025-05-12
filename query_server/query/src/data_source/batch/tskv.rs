@@ -12,7 +12,7 @@ use datafusion::datasource::{TableProvider, TableType};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::expr::AggregateFunction;
-use datafusion::logical_expr::logical_plan::AggWithGrouping;
+use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::logical_expr::{
     aggregate_function, Expr, TableProviderAggregationPushDown, TableProviderFilterPushDown,
 };
@@ -70,7 +70,7 @@ impl ClusterTable {
             .await
             .map_err(|err| DataFusionError::External(Box::new(err)))?;
         if splits.is_empty() {
-            return Ok(Arc::new(EmptyExec::new(false, proj_schema)));
+            return Ok(Arc::new(EmptyExec::new(proj_schema)));
         }
 
         Ok(Arc::new(TskvExec::new(
@@ -86,13 +86,13 @@ impl ClusterTable {
         &self,
         ctx: &SessionState,
         filter: Arc<Predicate>,
-        agg_with_grouping: &AggWithGrouping,
+        aggregate: &TableScanAggregate,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        let AggWithGrouping {
+        let TableScanAggregate {
             group_expr: _,
-            agg_expr,
+            aggr_expr,
             schema,
-        } = agg_with_grouping;
+        } = aggregate;
         let proj_schema = SchemaRef::from(schema.deref());
 
         let table_layout = TableLayoutHandle {
@@ -107,7 +107,7 @@ impl ClusterTable {
             .map_err(|err| DataFusionError::External(Box::new(err)))?;
 
         // Parsing Aggregate Functions
-        let aggs = agg_expr
+        let aggs = aggr_expr
             .iter()
             .map(|e| match e {
                 Expr::AggregateFunction(agg) => Ok(agg),
@@ -137,7 +137,7 @@ impl ClusterTable {
                     None,
                 )?));
             } else {
-                return Ok(Arc::new(EmptyExec::new(false, proj_schema)));
+                return Ok(Arc::new(EmptyExec::new(proj_schema)));
             }
         }
 
@@ -245,7 +245,7 @@ impl ClusterTable {
             .await
             .map_err(|err| DataFusionError::External(Box::new(err)))?;
         if splits.is_empty() {
-            return Ok(Arc::new(EmptyExec::new(false, projected_schema)));
+            return Ok(Arc::new(EmptyExec::new(projected_schema)));
         }
 
         Ok(Arc::new(TagScanExec::new(
@@ -302,7 +302,7 @@ impl TableProvider for ClusterTable {
         ctx: &SessionState,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
-        agg_with_grouping: Option<&AggWithGrouping>,
+        aggregate: Option<&TableScanAggregate>,
         // limit can be used to reduce the amount scanned
         // from the datasource as a performance optimization.
         // If set, it contains the amount of rows needed by the `LogicalPlan`,
@@ -336,11 +336,9 @@ impl TableProvider for ClusterTable {
                 .map_err(|e| DataFusionError::External(Box::new(e)))?,
         );
 
-        if let Some(agg_with_grouping) = agg_with_grouping {
+        if let Some(aggregate) = aggregate {
             debug!("Create aggregate filter tskv scan.");
-            return self
-                .create_agg_filter_scan(ctx, filter, agg_with_grouping)
-                .await;
+            return self.create_agg_filter_scan(ctx, filter, aggregate).await;
         }
 
         return self

@@ -9,7 +9,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::{DFSchemaRef, DataFusionError, ToDFSchema};
 use datafusion::datasource::{self, TableProvider};
 use datafusion::execution::context::{SessionState, TaskContext};
-use datafusion::logical_expr::logical_plan::AggWithGrouping;
+use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::logical_expr::{
     LogicalPlan, LogicalPlanBuilder, TableType, UserDefinedLogicalNodeCore,
 };
@@ -99,7 +99,7 @@ impl TableProvider for Table {
         ctx: &SessionState,
         _projection: Option<&Vec<usize>>,
         filters: &[Expr],
-        _: Option<&AggWithGrouping>,
+        _: Option<&TableScanAggregate>,
         _limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let table_scan_exec = TableScanExec {

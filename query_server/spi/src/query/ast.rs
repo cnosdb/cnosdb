@@ -79,6 +79,21 @@ pub struct SqlOption {
     pub value: Value,
 }
 
+/// Readable file type
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileType {
+    /// Apache Arrow file
+    ARROW,
+    /// Apache Avro file
+    AVRO,
+    /// Apache Parquet file
+    PARQUET,
+    /// CSV file
+    CSV,
+    /// JSON file
+    JSON,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplicaDestroy {
     pub replica_id: ReplicationSetId,

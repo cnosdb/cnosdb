@@ -261,7 +261,13 @@ impl TreeNodeRewriter for PredicateColumnsReassigner {
                         Ok(_) => Ok(Transformed::no(expr)),
                         Err(e) => {
                             // If the column is not in the full schema, should throw the error
-                            Err(DataFusionError::ArrowError(e, None))
+                            Err(DataFusionError::ArrowError(
+                                e,
+                                Some(format!(
+                                    "rewrite plan node for Expr::Column({})",
+                                    column.name()
+                                )),
+                            ))
                         }
                     };
                 }

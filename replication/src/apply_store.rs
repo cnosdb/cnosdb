@@ -134,7 +134,7 @@ impl ApplyStorage for HeedApplyStorage {
         Ok(())
     }
 
-    async fn destory(&mut self) -> ReplicationResult<()> {
+    async fn destroy(&mut self) -> ReplicationResult<()> {
         Ok(())
     }
 

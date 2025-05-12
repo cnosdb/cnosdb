@@ -261,12 +261,12 @@ impl ApplyStorage for TskvEngineStorage {
         Ok(())
     }
 
-    async fn destory(&mut self) -> ReplicationResult<()> {
-        info!("destory vnode id: {}", self.vnode_id);
+    async fn destroy(&mut self) -> ReplicationResult<()> {
+        info!("destroy vnode id: {}", self.vnode_id);
         self.storage
             .remove_tsfamily(&self.tenant, &self.db_name, self.vnode_id)
             .await
-            .map_err(|err| ReplicationError::DestoryRaftNodeErr {
+            .map_err(|err| ReplicationError::DestroyRaftNodeErr {
                 msg: err.to_string(),
             })?;
 

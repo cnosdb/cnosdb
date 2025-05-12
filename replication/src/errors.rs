@@ -111,9 +111,9 @@ pub enum ReplicationError {
     #[error_code(code = 13)]
     RestoreSnapshotErr { msg: String },
 
-    #[snafu(display("Destory raft node failed: {}", msg))]
+    #[snafu(display("Destroy raft node failed: {}", msg))]
     #[error_code(code = 14)]
-    DestoryRaftNodeErr { msg: String },
+    DestroyRaftNodeErr { msg: String },
 
     #[snafu(display("Can't found entry by index: {}", index))]
     #[error_code(code = 15)]

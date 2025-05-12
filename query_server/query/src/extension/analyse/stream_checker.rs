@@ -61,6 +61,6 @@ impl<'a> TreeNodeVisitor<'a> for UnsupportedOperationVisitor {
             _ => {}
         }
 
-        Ok(VisitRecursion::Continue)
+        Ok(TreeNodeRecursion::Continue)
     }
 }

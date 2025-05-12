@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use datafusion::common::tree_node::Transformed;
 use datafusion::datasource::source_as_provider;
 use datafusion::error::Result;
 use datafusion::logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder, TableScan};
@@ -16,22 +17,22 @@ use crate::extension::logical::plan_node::tag_scan::TagScanPlanNode;
 pub struct RewriteTagScan {}
 
 impl OptimizerRule for RewriteTagScan {
-    fn try_optimize(
+    fn rewrite(
         &self,
-        plan: &LogicalPlan,
+        plan: LogicalPlan,
         _optimizer_config: &dyn OptimizerConfig,
-    ) -> Result<Option<LogicalPlan>> {
+    ) -> Result<Transformed<LogicalPlan>> {
         if let LogicalPlan::TableScan(TableScan {
             table_name,
             source,
             projection,
             projected_schema,
             filters,
-            agg_with_grouping,
+            aggregate,
             fetch,
         }) = plan
         {
-            if let Some(cluster_table) = source_as_provider(source)?
+            if let Some(cluster_table) = source_as_provider(&source)?
                 .as_any()
                 .downcast_ref::<ClusterTable>()
             {
@@ -55,8 +56,7 @@ impl OptimizerRule for RewriteTagScan {
                             }
                         });
 
-                    if contain_tag && !contain_field && !contain_time && agg_with_grouping.is_none()
-                    {
+                    if contain_tag && !contain_field && !contain_time && aggregate.is_none() {
                         // If it does not contain non-tag columns, convert TableScan to TagScan
                         let tag_plan = LogicalPlan::Extension(Extension {
                             node: Arc::new(TagScanPlanNode {
@@ -68,7 +68,7 @@ impl OptimizerRule for RewriteTagScan {
                                 fetch: *fetch,
                             }),
                         });
-                        return Ok(Some(
+                        return Ok(Transformed::yes(
                             LogicalPlanBuilder::from(tag_plan).distinct()?.build()?,
                         ));
                     }
@@ -76,7 +76,7 @@ impl OptimizerRule for RewriteTagScan {
             }
         }
 
-        Ok(None)
+        Ok(Transformed::no(plan))
     }
 
     fn name(&self) -> &str {

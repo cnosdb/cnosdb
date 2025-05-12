@@ -172,10 +172,10 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     assert_eq!(info.replica_set.vnodes.len(), 1);
     assert_eq!(info.replica_set.leader_node_id, target_node);
 
-    // test replica destory, replica not exist
-    let command = "replica destory replica_id 9999".to_string();
+    // test replica destroy, replica not exist
+    let command = "replica destroy replica_id 9999".to_string();
     println!(
-        "-----------test replica destory, replica not exist: {}",
+        "-----------test replica destroy, replica not exist: {}",
         command
     );
     let resp = client.post(server_url, &command).unwrap();
@@ -186,18 +186,18 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     assert_eq!(info.replica_set.vnodes.len(), 1);
     assert_eq!(info.replica_set.leader_node_id, target_node);
 
-    // test replica destory
-    let command = format!("replica destory replica_id {}", replica_id);
-    println!("-----------test replica destory: {}", command);
+    // test replica destroy
+    let command = format!("replica destroy replica_id {}", replica_id);
+    println!("-----------test replica destroy: {}", command);
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), status_code::OK);
     std::thread::sleep(std::time::Duration::from_secs(1));
     let info = meta.get_replica_all_info(replica_id);
     assert!(info.is_none());
 
-    // test replica destory repeatly
-    let command = format!("replica destory replica_id {}", replica_id);
-    println!("-----------test replica destory repeatly: {}", command);
+    // test replica destroy repeatedly
+    let command = format!("replica destroy replica_id {}", replica_id);
+    println!("-----------test replica destroy repeatedly: {}", command);
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), 422);
     assert!(resp.text().unwrap().contains("ReplicationSet not found"));
@@ -414,23 +414,23 @@ fn replica_test_case_singleton() {
     assert_eq!(info.replica_set.vnodes.len(), 1);
     assert_eq!(info.replica_set.leader_node_id, target_node);
 
-    // destory replica
-    let command = format!("replica destory replica_id {replica_id}");
-    println!("-----------destory replica: {command}");
+    // destroy replica
+    let command = format!("replica destroy replica_id {replica_id}");
+    println!("-----------destroy replica: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), status_code::OK);
     std::thread::sleep(std::time::Duration::from_secs(1));
 
-    // destory replica  not exist
-    let command = "replica destory replica_id 9999".to_string();
-    println!("-----------destory replica  not exist: {command}");
+    // destroy replica  not exist
+    let command = "replica destroy replica_id 9999".to_string();
+    println!("-----------destroy replica  not exist: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), 422);
     assert!(resp.text().unwrap().contains("ReplicationSet not found"));
 
-    // destory replica  repeatly
-    let command = format!("replica destory replica_id {replica_id}");
-    println!("-----------destory replica  repeatly: {command}");
+    // destroy replica  repeatedly
+    let command = format!("replica destroy replica_id {replica_id}");
+    println!("-----------destroy replica  repeatedly: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), 422);
     assert!(resp.text().unwrap().contains("ReplicationSet not found"));
@@ -507,9 +507,9 @@ fn replica_test_case_1query_1tskv() {
     assert_eq!(info.replica_set.vnodes.len(), 1);
     assert_eq!(info.replica_set.leader_node_id, tskv_node);
 
-    // destory replica
-    let command = format!("replica destory replica_id {replica_id}");
-    println!("-----------destory replica: {command}");
+    // destroy replica
+    let command = format!("replica destroy replica_id {replica_id}");
+    println!("-----------destroy replica: {command}");
     let resp = client.post(req_url, &command).unwrap();
     assert_eq!(resp.status(), status_code::OK);
     std::thread::sleep(std::time::Duration::from_secs(1));

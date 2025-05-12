@@ -6,7 +6,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::execution::context::SessionState;
-use datafusion::logical_expr::logical_plan::AggWithGrouping;
+use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::logical_expr::Expr;
 use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::ExecutionPlan;
@@ -61,7 +61,7 @@ impl TableProvider for ClusterSchemaTenantsTable {
         _state: &SessionState,
         projection: Option<&Vec<usize>>,
         _filters: &[Expr],
-        _agg_with_grouping: Option<&AggWithGrouping>,
+        _aggregate: Option<&TableScanAggregate>,
         _limit: Option<usize>,
     ) -> DFResult<Arc<dyn ExecutionPlan>> {
         let mut builder = ClusterSchemaTenantsBuilder::default();

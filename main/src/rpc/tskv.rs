@@ -113,7 +113,7 @@ impl TskvServiceImpl {
             admin_command::Command::DestoryRaftGroup(command) => {
                 self.coord
                     .raft_manager()
-                    .destory_replica_group(tenant, &command.db_name, command.replica_id)
+                    .destroy_replica_group(tenant, &command.db_name, command.replica_id)
                     .await?;
                 Ok(vec![])
             }

@@ -165,7 +165,7 @@ impl RaftNode {
             .build()
         })?;
 
-        self.storage.destory().await?;
+        self.storage.destroy().await?;
 
         Ok(())
     }

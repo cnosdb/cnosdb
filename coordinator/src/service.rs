@@ -284,7 +284,7 @@ impl CoordService {
         for repl_set in info.bucket.shard_group.iter() {
             if repl_set.leader_node_id == self.node_id {
                 self.raft_manager()
-                    .destory_replica_group(&info.tenant, &info.database, repl_set.id)
+                    .destroy_replica_group(&info.tenant, &info.database, repl_set.id)
                     .await?;
             } else {
                 info!("Not the leader node for group: {} ignore...", repl_set.id);

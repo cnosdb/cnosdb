@@ -44,7 +44,7 @@ use datafusion::sql::planner::{object_name_to_table_reference, PlannerContext, S
 use datafusion::sql::sqlparser::ast::{
     Assignment, AssignmentTarget, CreateTable as SQLCreateTable, DataType as SQLDataType, Delete,
     Expr as SQLExpr, Expr as ASTExpr, Ident, Insert, ObjectName, Offset, OrderByExpr, Query,
-    SqlOption, Statement, TableAlias, TableFactor, TableWithJoins, TimezoneInfo,
+    Statement, TableAlias, TableFactor, TableWithJoins, TimezoneInfo,
 };
 use datafusion::sql::sqlparser::parser::ParserError;
 use datafusion::sql::TableReference;
@@ -70,9 +70,8 @@ use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use object_store::ObjectStore;
 use snafu::ResultExt;
-use spi::query::ast;
 use spi::query::ast::{
-    AlterDatabase as ASTAlterDatabase, AlterTable as ASTAlterTable,
+    self, AlterDatabase as ASTAlterDatabase, AlterTable as ASTAlterTable,
     AlterTableAction as ASTAlterTableAction, AlterTenantOperation, AlterUserOperation,
     ChecksumGroup as ASTChecksumGroup, ColumnOption, CompactDatabase as ASTCompactDatabase,
     CompactVnode as ASTCompactVnode, CopyIntoTable, CopyTarget, CopyVnode as ASTCopyVnode,
@@ -80,9 +79,10 @@ use spi::query::ast::{
     DatabaseConfig as ASTDatabaseConfig, DatabaseOptions as ASTDatabaseOptions,
     DescribeDatabase as DescribeDatabaseOptions, DescribeTable as DescribeTableOptions,
     DropVnode as ASTDropVnode, ExtStatement, MoveVnode as ASTMoveVnode,
-    ReplicaAdd as ASTReplicaAdd, ReplicaDestroy as ASTReplicaDestory,
+    ReplicaAdd as ASTReplicaAdd, ReplicaDestroy as ASTReplicaDestroy,
     ReplicaPromote as ASTReplicaPromote, ReplicaRemove as ASTReplicaRemove,
-    ShowSeries as ASTShowSeries, ShowTagBody, ShowTagValues as ASTShowTagValues, UriLocation, With,
+    ShowSeries as ASTShowSeries, ShowTagBody, ShowTagValues as ASTShowTagValues, SqlOption,
+    UriLocation, With,
 };
 use spi::query::datasource::{self, UriSchema};
 use spi::query::logical_planner::{
@@ -241,7 +241,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::RecoverTenant(stmt) => self.recovertenant_to_plan(stmt),
             ExtStatement::RecoverDatabase(stmt) => self.recoverdatabase_to_plan(stmt, session),
             ExtStatement::ShowReplicas => self.show_replicas_to_plan(),
-            ExtStatement::ReplicaDestroy(stmt) => self.replica_destory_to_plan(stmt),
+            ExtStatement::ReplicaDestroy(stmt) => self.replica_destroy_to_plan(stmt),
             ExtStatement::ReplicaAdd(stmt) => self.replica_add_to_plan(stmt),
             ExtStatement::ReplicaRemove(stmt) => self.replica_remove_to_plan(stmt),
             ExtStatement::ReplicaPromote(stmt) => self.replica_promote_to_plan(stmt),
@@ -2242,8 +2242,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    fn replica_destory_to_plan(&self, stmt: ASTReplicaDestory) -> QueryResult<PlanWithPrivileges> {
-        let ASTReplicaDestory { replica_id } = stmt;
+    fn replica_destroy_to_plan(&self, stmt: ASTReplicaDestroy) -> QueryResult<PlanWithPrivileges> {
+        let ASTReplicaDestroy { replica_id } = stmt;
 
         let plan = Plan::DDL(DDLPlan::ReplicaDestroy(ReplicaDestroy { replica_id }));
         Ok(PlanWithPrivileges {
@@ -3143,7 +3143,7 @@ mod tests {
     use datafusion::datasource::TableProvider;
     use datafusion::error::Result;
     use datafusion::execution::memory_pool::UnboundedMemoryPool;
-    use datafusion::logical_expr::logical_plan::AggWithGrouping;
+    use datafusion::logical_expr::logical_plan::TableScanAggregate;
     use datafusion::logical_expr::{
         AggregateUDF, Extension, ScalarUDF, TableSource, TableType, WindowUDF,
     };
@@ -3307,7 +3307,7 @@ mod tests {
             _state: &SessionState,
             _projection: Option<&Vec<usize>>,
             _filters: &[Expr],
-            _agg_with_grouping: Option<&AggWithGrouping>,
+            _aggregate: Option<&TableScanAggregate>,
             _limit: Option<usize>,
         ) -> Result<Arc<dyn ExecutionPlan>> {
             todo!()

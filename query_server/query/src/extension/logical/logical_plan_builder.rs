@@ -82,7 +82,7 @@ impl LogicalPlanBuilderExt for LogicalPlanBuilder {
             projected_schema: Arc::new(projected_schema),
             projection: None,
             filters: vec![],
-            agg_with_grouping: None,
+            aggregate: None,
         });
 
         Ok(Self::from(LogicalPlan::Extension(Extension { node })))

@@ -105,7 +105,7 @@ pub trait ApplyStorage: Send + Sync + Any {
     async fn get_snapshot(&mut self) -> ReplicationResult<Option<(Vec<u8>, u64)>>;
     async fn create_snapshot(&mut self, applied_id: u64) -> ReplicationResult<(Vec<u8>, u64)>;
     async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()>;
-    async fn destory(&mut self) -> ReplicationResult<()>;
+    async fn destroy(&mut self) -> ReplicationResult<()>;
     async fn metrics(&self) -> ReplicationResult<EngineMetrics>;
 }
 pub type ApplyStorageRef = Arc<RwLock<dyn ApplyStorage + Send + Sync>>;

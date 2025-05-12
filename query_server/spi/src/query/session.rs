@@ -7,7 +7,8 @@ use datafusion::common::extensions_options;
 use datafusion::config::ConfigExtension;
 use datafusion::execution::context::SessionState;
 use datafusion::execution::memory_pool::MemoryPool;
-use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
+use datafusion::execution::runtime_env::RuntimeEnvBuilder;
+use datafusion::execution::SessionStateBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion::variable::VarType;
 use models::auth::user::User;
@@ -160,11 +161,14 @@ impl SessionCtxFactory {
             coord.get_config().storage.copyinto_trigger_flush_size,
         );
 
-        let rt_config = RuntimeConfig::new().with_memory_pool(memory_pool);
-        let rt = RuntimeEnv::new(rt_config)?;
-        let df_session_state =
-            SessionState::with_config_rt(config, Arc::new(rt)).with_session_id(session_id.into());
-        let df_session_ctx = SessionContext::with_state(df_session_state);
+        let rt = RuntimeEnvBuilder::new()
+            .with_memory_pool(memory_pool)
+            .build()?;
+        let df_session_state = SessionStateBuilder::new()
+            .with_runtime_env(Arc::new(rt))
+            .with_session_id(session_id.into())
+            .build();
+        let df_session_ctx = SessionContext::new_with_state(df_session_state);
         // register built-in system variables
         if let Some(p) = self.sys_var_provider.as_ref() {
             df_session_ctx.register_variable(VarType::System, p.clone());

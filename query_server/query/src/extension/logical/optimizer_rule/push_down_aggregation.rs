@@ -24,8 +24,9 @@ use datafusion::functions_aggregate::sum::Sum;
 use datafusion::logical_expr::expr::{AggregateFunction, AggregateFunctionParams};
 use datafusion::logical_expr::utils::{exprlist_to_columns, grouping_set_to_exprlist};
 use datafusion::logical_expr::{
-    AggWithGrouping, Aggregate, AggregateFunction as AggregateFunctionName, AggregateUDF,
-    LogicalPlan, LogicalPlanBuilder, Projection, TableProviderAggregationPushDown, TableScan,
+    Aggregate, AggregateFunction as AggregateFunctionName, AggregateUDF, LogicalPlan,
+    LogicalPlanBuilder, Projection, TableProviderAggregationPushDown, TableScan,
+    TableScanAggregate,
 };
 use datafusion::optimizer::{optimize_children, OptimizerConfig, OptimizerRule};
 use datafusion::prelude::Expr;
@@ -77,11 +78,11 @@ impl OptimizerRule for PushDownAggregation {
                 projection: _,
                 projected_schema: _,
                 filters,
-                agg_with_grouping,
+                aggregate,
                 fetch,
             }) = temp_input.deref()
             {
-                if agg_with_grouping.is_none() && filters.is_empty() {
+                if aggregate.is_none() && filters.is_empty() {
                     let new_plan = match source
                         .supports_aggregate_pushdown(group_expr, aggr_expr)?
                     {
@@ -190,9 +191,9 @@ impl OptimizerRule for PushDownAggregation {
                                 projected_schema: schema.clone(),
                                 filters: filters.clone(),
                                 fetch: *fetch,
-                                agg_with_grouping: Some(AggWithGrouping {
+                                aggregate: Some(TableScanAggregate {
                                     group_expr: group_expr.clone(),
-                                    agg_expr: aggr_expr.clone(),
+                                    aggr_expr: aggr_expr.clone(),
                                     schema: schema.clone(),
                                 }),
                             });
@@ -222,9 +223,9 @@ impl OptimizerRule for PushDownAggregation {
                                 projected_schema: schema.clone(),
                                 filters: filters.clone(),
                                 fetch: *fetch,
-                                agg_with_grouping: Some(AggWithGrouping {
+                                aggregate: Some(TableScanAggregate {
                                     group_expr: group_expr.clone(),
-                                    agg_expr: aggr_expr.clone(),
+                                    aggr_expr: aggr_expr.clone(),
                                     schema: schema.clone(),
                                 }),
                             }))
