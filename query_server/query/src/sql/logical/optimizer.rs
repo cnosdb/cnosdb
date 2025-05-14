@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use datafusion::execution::context::ExecutionProps;
+use datafusion::logical_expr::simplify::SimplifyContext;
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::optimizer::common_subexpr_eliminate::CommonSubexprEliminate;
 use datafusion::optimizer::decorrelate_predicate_subquery::DecorrelatePredicateSubquery;
@@ -9,20 +11,16 @@ use datafusion::optimizer::eliminate_filter::EliminateFilter;
 use datafusion::optimizer::eliminate_join::EliminateJoin;
 use datafusion::optimizer::eliminate_limit::EliminateLimit;
 use datafusion::optimizer::eliminate_outer_join::EliminateOuterJoin;
-use datafusion::optimizer::eliminate_project::EliminateProjection;
 use datafusion::optimizer::extract_equijoin_predicate::ExtractEquijoinPredicate;
 use datafusion::optimizer::filter_null_join_keys::FilterNullJoinKeys;
-use datafusion::optimizer::merge_projection::MergeProjection;
+use datafusion::optimizer::optimize_projections::OptimizeProjections;
 use datafusion::optimizer::propagate_empty_relation::PropagateEmptyRelation;
 use datafusion::optimizer::push_down_filter::PushDownFilter;
 use datafusion::optimizer::push_down_limit::PushDownLimit;
-use datafusion::optimizer::push_down_projection::PushDownProjection;
 use datafusion::optimizer::replace_distinct_aggregate::ReplaceDistinctWithAggregate;
-use datafusion::optimizer::rewrite_disjunctive_predicate::RewriteDisjunctivePredicate;
 use datafusion::optimizer::scalar_subquery_to_join::ScalarSubqueryToJoin;
-use datafusion::optimizer::simplify_expressions::SimplifyExpressions;
+use datafusion::optimizer::simplify_expressions::{ExprSimplifier, SimplifyExpressions};
 use datafusion::optimizer::single_distinct_to_groupby::SingleDistinctToGroupBy;
-use datafusion::optimizer::unwrap_cast_in_comparison::UnwrapCastInComparison;
 use datafusion::optimizer::OptimizerRule;
 use spi::query::analyzer::AnalyzerRef;
 use spi::query::logical_planner::QueryPlan;
@@ -35,7 +33,7 @@ use crate::extension::logical::optimizer_rule::push_down_aggregation::PushDownAg
 use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
 use crate::sql::analyzer::DefaultAnalyzer;
 
-const PUSH_DOWN_PROJECTION_INDEX: usize = 24; // index of PushDownProjection in rules
+const OPTIMIZE_PROJECTIONS_INDEX: usize = 24; // index of OptimizeProjections in rules
 
 pub trait LogicalOptimizer: Send + Sync {
     fn optimize(&self, plan: &QueryPlan, session: &SessionCtx) -> QueryResult<LogicalPlan>;
@@ -66,7 +64,10 @@ impl Default for DefaultLogicalOptimizer {
         let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = vec![
             // df default rules start
             Arc::new(SimplifyExpressions::new()),
-            Arc::new(UnwrapCastInComparison::new()),
+            // TODO(zipper): Does this rule can do unwrap_cast_in_comparison?
+            Arc::new(ExprSimplifier::new(SimplifyContext::new(
+                &ExecutionProps::default(),
+            ))),
             Arc::new(ReplaceDistinctWithAggregate::new()),
             Arc::new(EliminateJoin::new()),
             Arc::new(DecorrelatePredicateSubquery::new()),
@@ -76,8 +77,6 @@ impl Default for DefaultLogicalOptimizer {
             // run it again after running the optimizations that potentially converted
             // subqueries to joins
             Arc::new(SimplifyExpressions::new()),
-            Arc::new(MergeProjection::new()),
-            Arc::new(RewriteDisjunctivePredicate::new()),
             Arc::new(EliminateDuplicatedExpr::new()),
             Arc::new(EliminateFilter::new()),
             Arc::new(EliminateCrossJoin::new()),
@@ -93,10 +92,8 @@ impl Default for DefaultLogicalOptimizer {
             // The previous optimizations added expressions and projections,
             // that might benefit from the following rules
             Arc::new(SimplifyExpressions::new()),
-            Arc::new(UnwrapCastInComparison::new()),
             Arc::new(CommonSubexprEliminate::new()),
-            Arc::new(PushDownProjection::new(false)),
-            Arc::new(EliminateProjection::new()),
+            Arc::new(OptimizeProjections::new()),
             Arc::new(PushDownAggregation::new()),
             // PushDownProjection can pushdown Projections through Limits, do PushDownLimit again.
             Arc::new(PushDownLimit::new()),
@@ -137,7 +134,8 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
 
         let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = if plan.is_tag_scan {
             let mut rules = self.rules.clone();
-            rules[PUSH_DOWN_PROJECTION_INDEX] = Arc::new(PushDownProjection::new(plan.is_tag_scan));
+            rules[OPTIMIZE_PROJECTIONS_INDEX] =
+                Arc::new(OptimizeProjections::new(plan.is_tag_scan));
             rules
         } else {
             self.rules.clone()

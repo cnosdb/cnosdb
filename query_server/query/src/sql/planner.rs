@@ -6,16 +6,15 @@ use std::{iter, vec};
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
-use datafusion::arrow::datatypes::{DataType, SchemaRef, TimeUnit};
+use datafusion::arrow::datatypes::{DataType, Field, SchemaRef, TimeUnit};
 use datafusion::arrow::error::ArrowError;
 use datafusion::common::parsers::CompressionTypeVariant;
 use datafusion::common::tree_node::TreeNode;
 use datafusion::common::{
-    Column, Constraints, DFField, DFSchema, OwnedTableReference, Result as DFResult, ToDFSchema,
+    Column, Constraints, DFSchema, Result as DFResult, TableReference, ToDFSchema,
 };
 use datafusion::datasource::file_format::avro::AvroFormat;
 use datafusion::datasource::file_format::csv::CsvFormat;
-use datafusion::datasource::file_format::file_type::FileType;
 use datafusion::datasource::file_format::json::JsonFormat;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
@@ -25,29 +24,28 @@ use datafusion::datasource::listing::{
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::SessionState;
 use datafusion::execution::runtime_env::RuntimeEnv;
-use datafusion::logical_expr::expr::{ScalarFunction, Sort};
-use datafusion::logical_expr::expr_rewriter::rewrite_preserving_name;
+use datafusion::logical_expr::expr::Sort;
 use datafusion::logical_expr::logical_plan::Analyze;
 use datafusion::logical_expr::utils::expr_to_columns;
 use datafusion::logical_expr::{
-    lit, BinaryExpr, BuiltinScalarFunction, Case, CreateExternalTable as PlanCreateExternalTable,
-    EmptyRelation, Explain, ExplainFormat, Expr, Extension, LogicalPlan, LogicalPlanBuilder,
-    Operator, PlanType, SubqueryAlias, TableSource, ToStringifiedPlan, Union,
+    lit, BinaryExpr, Case, CreateExternalTable as PlanCreateExternalTable, EmptyRelation, Explain,
+    ExplainFormat, Expr, Extension, LogicalPlan, LogicalPlanBuilder, Operator, PlanType,
+    SubqueryAlias, TableSource, ToStringifiedPlan, Union,
 };
 use datafusion::optimizer::analyzer::type_coercion::TypeCoercionRewriter;
 use datafusion::optimizer::simplify_expressions::ConstEvaluator;
+use datafusion::optimizer::utils::NamePreserver;
 use datafusion::physical_expr::execution_props::ExecutionProps;
-use datafusion::prelude::col;
+use datafusion::prelude::{col, concat_ws};
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::{object_name_to_table_reference, PlannerContext, SqlToRel};
 use datafusion::sql::sqlparser::ast::{
     Assignment, AssignmentTarget, CreateTable as SQLCreateTable, DataType as SQLDataType, Delete,
-    Expr as SQLExpr, Expr as ASTExpr, Ident, Insert, ObjectName, Offset, OrderByExpr, Query,
-    Statement, TableAlias, TableFactor, TableWithJoins, TimezoneInfo,
+    Expr as SQLExpr, Expr as ASTExpr, Ident, Insert, ObjectName, Offset, OrderByExpr,
+    OrderByOptions, Query, Statement, TableAlias, TableFactor, TableWithJoins, TimezoneInfo,
 };
 use datafusion::sql::sqlparser::parser::ParserError;
-use datafusion::sql::TableReference;
 use lazy_static::__Deref as _;
 use meta::error::MetaError;
 use models::auth::bcrypt_verify;
@@ -78,7 +76,7 @@ use spi::query::ast::{
     CreateDatabase as ASTCreateDatabase, CreateTable as ASTCreateTable,
     DatabaseConfig as ASTDatabaseConfig, DatabaseOptions as ASTDatabaseOptions,
     DescribeDatabase as DescribeDatabaseOptions, DescribeTable as DescribeTableOptions,
-    DropVnode as ASTDropVnode, ExtStatement, MoveVnode as ASTMoveVnode,
+    DropVnode as ASTDropVnode, ExtStatement, FileType, MoveVnode as ASTMoveVnode,
     ReplicaAdd as ASTReplicaAdd, ReplicaDestroy as ASTReplicaDestroy,
     ReplicaPromote as ASTReplicaPromote, ReplicaRemove as ASTReplicaRemove,
     ShowSeries as ASTShowSeries, ShowTagBody, ShowTagValues as ASTShowTagValues, SqlOption,
@@ -609,11 +607,16 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                     .df_planner
                     .sql_to_expr(expr, &df_schema, &mut Default::default())?;
 
-                let mut rewriter = TypeCoercionRewriter::new(&df_schema);
-                let expr = rewrite_preserving_name(sel, &mut rewriter)?;
+                let expr = {
+                    let mut rewriter = TypeCoercionRewriter::new(&df_schema);
+                    let saved_name = NamePreserver::new_for_projection().save(&sel);
+                    let expr = sel.rewrite(&mut rewriter)?.data;
+                    saved_name.restore(expr)
+                };
+
                 let props = ExecutionProps::default();
                 let mut const_evaluator = ConstEvaluator::try_new(&props)?;
-                let expr = expr.rewrite(&mut const_evaluator)?;
+                let expr = expr.rewrite(&mut const_evaluator)?.data;
                 Some(expr)
             }
             None => None,
@@ -853,7 +856,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     fn df_external_table_to_plan(
         &self,
         statement: AstCreateExternalTable,
-        name: OwnedTableReference,
+        name: TableReference,
     ) -> QueryResult<PlanCreateExternalTable> {
         let definition = Some(statement.to_string());
         let AstCreateExternalTable {
@@ -874,15 +877,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         if file_type == "PARQUET" && !columns.is_empty() {
             Err(DataFusionError::Plan(
                 "Column definitions can not be specified for PARQUET files.".into(),
-            ))?;
-        }
-
-        if file_type != "CSV"
-            && file_type != "JSON"
-            && file_compression_type != CompressionTypeVariant::UNCOMPRESSED
-        {
-            Err(DataFusionError::Plan(
-                "File compression type can be specified for CSV/JSON files.".into(),
             ))?;
         }
 
@@ -1709,8 +1703,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             SQLDataType::Timestamp(_, TimezoneInfo::None) => Ok(ColumnType::Time(time_unit)),
             SQLDataType::BigInt(_) => Ok(ColumnType::Field(ValueType::Integer)),
             SQLDataType::UnsignedBigInt(_) => Ok(ColumnType::Field(ValueType::Unsigned)),
-            SQLDataType::Double => Ok(ColumnType::Field(ValueType::Float)),
-            SQLDataType::String => Ok(ColumnType::Field(ValueType::String)),
+            SQLDataType::Double(_) => Ok(ColumnType::Field(ValueType::Float)),
+            SQLDataType::String(_) => Ok(ColumnType::Field(ValueType::String)),
             SQLDataType::Boolean => Ok(ColumnType::Field(ValueType::Boolean)),
             SQLDataType::Custom(name, params) => {
                 make_custom_data_type(name, params).map_err(unsupport_type_err)
@@ -1730,8 +1724,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             SQLDataType::Timestamp(_, _) => encoding.is_timestamp_encoding(),
             SQLDataType::BigInt(_) => encoding.is_bigint_encoding(),
             SQLDataType::UnsignedBigInt(_) => encoding.is_unsigned_encoding(),
-            SQLDataType::Double => encoding.is_double_encoding(),
-            SQLDataType::String | SQLDataType::Custom(_, _) => encoding.is_string_encoding(),
+            SQLDataType::Double(_) => encoding.is_double_encoding(),
+            SQLDataType::String(_) | SQLDataType::Custom(_, _) => encoding.is_string_encoding(),
             SQLDataType::Boolean => encoding.is_bool_encoding(),
             _ => false,
         };
@@ -2531,13 +2525,13 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
 
         // 2. build source plan
         let source_plan = self.create_relation(from, &Default::default())?;
-        let source_schem = SchemaRef::new(source_plan.schema().deref().into());
+        let source_schema = SchemaRef::new(source_plan.schema().deref().into());
 
         // 3. According to the external path, construct the external table
         let target_table = build_external_location_table_source(
             session,
             table_path,
-            Some(source_schem),
+            Some(source_schema),
             file_format_options,
         )
         .await?;
@@ -2555,7 +2549,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
 
     fn create_table_relation(
         &self,
-        table_ref: OwnedTableReference,
+        table_ref: TableReference,
         alias: Option<TableAlias>,
         ctes: &HashMap<String, LogicalPlan>,
     ) -> DFResult<(LogicalPlan, Option<TableAlias>)> {
@@ -2841,12 +2835,10 @@ fn show_series_projection(
         Expr::Case(Case::new(None, when_then_expr, else_expr))
     });
 
-    let concat_ws_args = iter::once(lit(","))
-        .chain(iter::once(lit(&table_schema.name)))
+    let concat_ws_args = iter::once(lit(&table_schema.name))
         .chain(tag_concat_expr_iter)
         .collect::<Vec<Expr>>();
-    let func = ScalarFunction::new(BuiltinScalarFunction::ConcatWithSeparator, concat_ws_args);
-    let concat_ws = Expr::ScalarFunction(func).alias("key");
+    let func = concat_ws(lit(","), concat_ws_args).alias("key");
     Ok(plan_builder.project(iter::once(concat_ws))?.build()?)
 }
 
@@ -2896,8 +2888,8 @@ fn show_tag_value_projections(
             produce_one_row: false,
             schema: Arc::new(DFSchema::new_with_metadata(
                 vec![
-                    DFField::new_unqualified("key", DataType::Utf8, false),
-                    DFField::new_unqualified("value", DataType::Utf8, false),
+                    Field::new("key", DataType::Utf8, false),
+                    Field::new("value", DataType::Utf8, false),
                 ],
                 HashMap::new(),
             )?),
@@ -2976,13 +2968,10 @@ fn databases_privileges(
         .collect()
 }
 
-fn extract_database_table_name<'a>(
-    full_name: &'a str,
-    session: &'a SessionCtx,
-) -> OwnedTableReference {
+fn extract_database_table_name<'a>(full_name: &'a str, session: &'a SessionCtx) -> TableReference {
     let table_ref = TableReference::from(full_name).to_owned_reference();
     let resolved = table_ref.resolve(session.tenant(), session.default_database());
-    OwnedTableReference::full(
+    TableReference::full(
         resolved.catalog.to_string(),
         resolved.schema.to_string(),
         resolved.table.to_string(),
@@ -3048,7 +3037,7 @@ pub fn normalize_ident(id: Ident) -> String {
 /// Normalize a SQL object name
 pub fn normalize_sql_object_name(
     sql_object_name: ObjectName,
-) -> Result<OwnedTableReference, DataFusionError> {
+) -> Result<TableReference, DataFusionError> {
     object_name_to_table_reference(sql_object_name, true)
 }
 

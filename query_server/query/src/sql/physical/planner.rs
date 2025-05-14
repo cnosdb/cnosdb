@@ -7,6 +7,7 @@ use datafusion::physical_optimizer::coalesce_batches::CoalesceBatches;
 use datafusion::physical_optimizer::enforce_distribution::EnforceDistribution;
 use datafusion::physical_optimizer::enforce_sorting::EnforceSorting;
 use datafusion::physical_optimizer::join_selection::JoinSelection;
+use datafusion::physical_optimizer::sanity_checker::SanityCheckPlan;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
 use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
 use datafusion::physical_plan::ExecutionPlan;
@@ -74,28 +75,10 @@ impl Default for DefaultPhysicalPlanner {
             // repartitioning and local sorting steps to meet distribution and ordering requirements.
             // Therefore, it should run before EnforceDistribution and EnforceSorting.
             Arc::new(JoinSelection::new()),
-            // If the query is processing infinite inputs, the PipelineFixer rule applies the
-            // necessary transformations to make the query runnable (if it is not already runnable).
-            // If the query can not be made runnable, the rule emits an error with a diagnostic message.
-            // Since the transformations it applies may alter output partitioning properties of operators
-            // (e.g. by swapping hash join sides), this rule runs before EnforceDistribution.
-            Arc::new(PipelineFixer::new()),
-            // In order to increase the parallelism, the Repartition rule will change the
-            // output partitioning of some operators in the plan tree, which will influence
-            // other rules. Therefore, it should run as soon as possible. It is optional because:
-            // - It's not used for the distributed engine, Ballista.
-            // - It's conflicted with some parts of the EnforceDistribution, since it will
-            //   introduce additional repartitioning while EnforceDistribution aims to
-            //   reduce unnecessary repartitioning.
-            Arc::new(Repartition::new()),
-            // - Currently it will depend on the partition number to decide whether to change the
-            // single node sort to parallel local sort and merge. Therefore, GlobalSortSelection
-            // should run after the Repartition.
-            // - Since it will change the output ordering of some operators, it should run
-            // before JoinSelection and EnforceSorting, which may depend on that.
-            Arc::new(GlobalSortSelection::new()),
-            // The EnforceDistribution rule is for adding essential repartition to satisfy the required
-            // distribution. Please make sure that the whole plan tree is determined before this rule.
+            // The EnforceDistribution rule is for adding essential repartitioning to satisfy distribution
+            // requirements. Please make sure that the whole plan tree is determined before this rule.
+            // This rule increases parallelism if doing so is beneficial to the physical plan; i.e. at
+            // least one of the operators in the plan benefits from increased parallelism.
             Arc::new(EnforceDistribution::new()),
             // The EnforceSorting rule is for adding essential local sorting to satisfy the required
             // ordering. Please make sure that the whole plan tree is determined before this rule.
@@ -105,11 +88,15 @@ impl Default for DefaultPhysicalPlanner {
             // The CoalesceBatches rule will not influence the distribution and ordering of the
             // whole plan tree. Therefore, to avoid influencing other rules, it should run last.
             Arc::new(CoalesceBatches::new()),
-            // The PipelineChecker rule will reject non-runnable query plans that use
-            // pipeline-breaking operators on infinite input(s). The rule generates a
-            // diagnostic error message when this happens. It makes no changes to the
-            // given query plan; i.e. it only acts as a final gatekeeping rule.
-            Arc::new(PipelineChecker::new()),
+            // The SanityCheckPlan rule checks whether the order and
+            // distribution requirements of each node in the plan
+            // is satisfied. It will also reject non-runnable query
+            // plans that use pipeline-breaking operators on infinite
+            // input(s). The rule generates a diagnostic error
+            // message for invalid plans. It makes no changes to the
+            // given query plan; i.e. it only acts as a final
+            // gatekeeping rule.
+            Arc::new(SanityCheckPlan::new()),
             // CnosDB
             Arc::new(AddAssertExec::new()),
             Arc::new(AddSortExec::new()),

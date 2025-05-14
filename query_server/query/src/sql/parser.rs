@@ -11,7 +11,7 @@ use datafusion::sql::sqlparser::ast::{
 use datafusion::sql::sqlparser::dialect::keywords::Keyword;
 use datafusion::sql::sqlparser::dialect::Dialect;
 use datafusion::sql::sqlparser::parser::{IsOptional, Parser, ParserError};
-use datafusion::sql::sqlparser::tokenizer::{Span as SqlSpan, Token, TokenWithLocation, Tokenizer};
+use datafusion::sql::sqlparser::tokenizer::{Span as SqlSpan, Token, TokenWithSpan, Tokenizer};
 use models::codec::Encoding;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use serde_json::Value as JsonValue;
@@ -962,7 +962,7 @@ impl<'a> ExtParser<'a> {
                     None => (HashMap::new(), true),
                 };
                 if let Some(has_header) = self.has_header {
-                    if new_options || !opt.contains_key(EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER) {
+                    if new_options || !options.contains_key(EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER) {
                         options.insert(
                             EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER.to_string(),
                             has_header.to_string(),
@@ -970,7 +970,7 @@ impl<'a> ExtParser<'a> {
                     }
                 }
                 if let Some(delimiter) = self.delimiter {
-                    if new_options || !opt.contains_key(EXTERNAL_TABLE_OPTION_CSV_DELIMITER) {
+                    if new_options || !options.contains_key(EXTERNAL_TABLE_OPTION_CSV_DELIMITER) {
                         options.insert(
                             EXTERNAL_TABLE_OPTION_CSV_DELIMITER.to_string(),
                             delimiter.to_string(),
@@ -978,10 +978,10 @@ impl<'a> ExtParser<'a> {
                     }
                 }
                 if let Some(compression) = self.file_compression_type {
-                    if new_options || !opt.contains_key(EXTERNAL_TABLE_OPTION_COMPRESSION) {
+                    if new_options || !options.contains_key(EXTERNAL_TABLE_OPTION_COMPRESSION) {
                         options.insert(
                             EXTERNAL_TABLE_OPTION_COMPRESSION.to_string(),
-                            file_compression_type.to_string(),
+                            compression.to_string(),
                         );
                     }
                 }
@@ -2278,15 +2278,24 @@ fn parse_file_type(s: &str) -> Result<String, ParserError> {
 mod tests {
     use std::ops::Deref;
 
+    use datafusion::prelude::Expr;
     use datafusion::sql::sqlparser::ast::{
-        ColumnDef, Ident, ObjectName, SetExpr, Statement, TableFactor, TimezoneInfo,
-        Value as SqlValue,
+        ColumnDef, CreateTable as SqlCreateTable, DataType as SqlDataType, Ident,
+        Insert as SqlInsert, ObjectName, SetExpr, Statement as SqlStatement, TableFactor,
+        TimezoneInfo, Value as SqlValue,
     };
-    use datafusion::sql::sqlparser::tokenizer::Span;
-    use spi::query::ast::{AlterTable, ExtStatement, ShowStreams, UriLocation};
-    use spi::query::logical_planner::TenantObjectType;
+    use datafusion::sql::sqlparser::tokenizer::Span as SqlSpan;
+    use models::codec::Encoding;
+    use spi::query::ast::{
+        self, AlterTable, AlterTableAction, ChecksumGroup, ColumnOption, CompactVnode,
+        CopyIntoLocation, CopyIntoTable, CopyVnode, CreateDatabase, CreateStream, CreateTable,
+        CreateTenant, DatabaseConfig, DatabaseOptions, DropGlobalObject, DropTenantObject,
+        DropVnode, ExtStatement, MoveVnode, OutputMode, RecoverDatabase, RecoverTenant,
+        ShowStreams, SqlOption, Trigger, UriLocation,
+    };
+    use spi::query::logical_planner::{GlobalObjectType, TenantObjectType};
 
-    use super::*;
+    use super::ExtParser;
 
     fn parse_sql(sql: &str) -> ExtStatement {
         ExtParser::parse_sql(sql)
@@ -2296,7 +2305,7 @@ mod tests {
             .unwrap()
     }
 
-    fn make_column_def(name: impl Into<String>, data_type: DataType) -> ColumnDef {
+    fn make_column_def(name: impl Into<String>, data_type: SqlDataType) -> ColumnDef {
         ColumnDef {
             name: Ident {
                 value: name.into(),
@@ -2522,7 +2531,7 @@ mod tests {
                 columns: vec![ColumnOption {
                     name: "column1".into(),
                     is_tag: false,
-                    data_type: DataType::BigInt(None),
+                    data_type: SqlDataType::BigInt(None),
                     encoding: None
                 }]
             })
@@ -2558,43 +2567,43 @@ mod tests {
                         ColumnOption {
                             name: Ident::from("column6"),
                             is_tag: true,
-                            data_type: DataType::String,
+                            data_type: SqlDataType::String,
                             encoding: None
                         },
                         ColumnOption {
                             name: Ident::from("column7"),
                             is_tag: true,
-                            data_type: DataType::String,
+                            data_type: SqlDataType::String,
                             encoding: None
                         },
                         ColumnOption {
                             name: Ident::from("column1"),
                             is_tag: false,
-                            data_type: DataType::BigInt(None),
+                            data_type: SqlDataType::BigInt(None),
                             encoding: Some(Encoding::Delta)
                         },
                         ColumnOption {
                             name: Ident::from("column2"),
                             is_tag: false,
-                            data_type: DataType::String,
+                            data_type: SqlDataType::String,
                             encoding: Some(Encoding::Gzip)
                         },
                         ColumnOption {
                             name: Ident::from("column3"),
                             is_tag: false,
-                            data_type: DataType::UnsignedBigInt(None),
+                            data_type: SqlDataType::UnsignedBigInt(None),
                             encoding: Some(Encoding::Null)
                         },
                         ColumnOption {
                             name: Ident::from("column4"),
                             is_tag: false,
-                            data_type: DataType::Boolean,
+                            data_type: SqlDataType::Boolean,
                             encoding: None
                         },
                         ColumnOption {
                             name: Ident::from("column5"),
                             is_tag: false,
-                            data_type: DataType::Double,
+                            data_type: SqlDataType::Double,
                             encoding: Some(Encoding::Gorilla)
                         }
                     ]
@@ -2614,8 +2623,8 @@ mod tests {
         assert_eq!(statements.len(), 1);
         match statements[0] {
             ExtStatement::SqlStatement(ref stmt) => match stmt.deref() {
-                Statement::Insert(Insert {
-                    table_name: ref sql_object_name,
+                SqlStatement::Insert(SqlInsert {
+                    table: ref sql_table_name,
                     columns: ref sql_column_names,
                     source: _,
                     ..
@@ -2661,7 +2670,7 @@ mod tests {
                         },
                     ];
 
-                    assert_eq!(sql_object_name, expect_table_name);
+                    assert_eq!(sql_table_name, expect_table_name);
                     assert_eq!(sql_column_names, expect_column_names);
                 }
                 _ => panic!("failed"),
@@ -2682,8 +2691,8 @@ mod tests {
         assert_eq!(statements.len(), 1);
         match statements[0] {
             ExtStatement::SqlStatement(ref stmt) => match stmt.deref() {
-                Statement::Insert(Insert {
-                    table_name: ref sql_object_name,
+                SqlStatement::Insert(SqlInsert {
+                    table: ref sql_table_name,
                     columns: ref sql_column_names,
                     source,
                     ..
@@ -2729,7 +2738,7 @@ mod tests {
                         },
                     ];
 
-                    assert_eq!(sql_object_name, expect_table_name);
+                    assert_eq!(sql_table_name, expect_table_name);
                     assert_eq!(sql_column_names, expect_column_names);
 
                     match source.deref().body.deref() {
@@ -2848,7 +2857,7 @@ mod tests {
                         column: ColumnOption {
                             name: Ident::from("t"),
                             is_tag: true,
-                            data_type: DataType::String,
+                            data_type: SqlDataType::String,
                             encoding: None
                         }
                     }
@@ -2859,7 +2868,7 @@ mod tests {
                         column: ColumnOption {
                             name: Ident::from("f"),
                             is_tag: false,
-                            data_type: DataType::BigInt(None),
+                            data_type: SqlDataType::BigInt(None),
                             encoding: Some(Encoding::Default)
                         }
                     }
@@ -3116,7 +3125,7 @@ mod tests {
                 assert_eq!(trigger, Some(Trigger::Once));
                 assert_eq!(watermark, Some("10s".into()));
                 assert_eq!(output_mode, Some(OutputMode::Update));
-                assert!(matches!(statement.deref(), Statement::Insert { .. }));
+                assert!(matches!(statement.deref(), SqlStatement::Insert { .. }));
             }
             _ => panic!("expect CreateStream"),
         }
@@ -3160,18 +3169,20 @@ mod tests {
 
         match statement {
             ExtStatement::CreateStreamTable(s) => {
-                if let Statement::CreateTable(CreateTable {
+                if let SqlStatement::CreateTable(SqlCreateTable {
                     if_not_exists,
                     name,
                     columns,
+                    with_options,
+                    engine,
                     ..
                 }) = s
                 {
                     let columns_expected = vec![
-                        make_column_def("time", DataType::Timestamp(None, TimezoneInfo::None)),
-                        make_column_def("name", DataType::String),
-                        make_column_def("driver", DataType::String),
-                        make_column_def("load_capacity", DataType::Double),
+                        make_column_def("time", SqlDataType::Timestamp(None, TimezoneInfo::None)),
+                        make_column_def("name", SqlDataType::String),
+                        make_column_def("driver", SqlDataType::String),
+                        make_column_def("load_capacity", SqlDataType::Double),
                     ];
                     let with_options_expected = vec![
                         SqlOption {
@@ -3230,7 +3241,7 @@ mod tests {
 
         match statement {
             ExtStatement::SqlStatement(ast) => match ast.as_ref() {
-                Statement::Update {
+                SqlStatement::Update {
                     table,
                     assignments,
                     from,
@@ -3258,18 +3269,18 @@ mod tests {
     #[test]
     fn test_create_tenant() {
         let sql = "create tenant test_tenant with drop_after='10d', comment='test tenant',
-        object_config        max_users_number = 1
+        object_config       max_users_number = 1
                             max_databases = 3
                             max_shard_number = 2
-                            max_replicate_number = 2 
+                            max_replicate_number = 2
                             max_retention_time = 30,
-        coord_data_in              remote_max = 10000
+        coord_data_in       remote_max = 10000
                             remote_initial = 0
                             remote_refill = 10000
                             remote_interval = 100
                             local_max = 10000
                             local_initial = 0,
-        coord_data_out             remote_max = 100
+        coord_data_out      remote_max = 100
                             remote_initial = 0
                             remote_refill = 100
                             remote_interval = 100
