@@ -1,8 +1,9 @@
-use datafusion::error::Result as DFResult;
+use std::sync::Arc;
+
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl, Signature};
 use models::arrow::DataType;
 use serde::Deserialize;
-use spi::DFResult;
 
 use crate::extension::expr::ts_gen_func::utils::{full_signatures, get_arg};
 

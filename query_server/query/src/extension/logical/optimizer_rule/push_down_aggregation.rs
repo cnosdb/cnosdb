@@ -17,24 +17,23 @@
 use std::ops::Deref;
 use std::sync::Arc;
 
-// use std::sync::Arc;
+use datafusion::common::tree_node::Transformed;
 use datafusion::common::Column;
-use datafusion::error::{DataFusionError, Result};
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::functions_aggregate::sum::Sum;
 use datafusion::logical_expr::expr::{AggregateFunction, AggregateFunctionParams};
-use datafusion::logical_expr::utils::{exprlist_to_columns, grouping_set_to_exprlist};
+use datafusion::logical_expr::utils::grouping_set_to_exprlist;
 use datafusion::logical_expr::{
-    Aggregate, AggregateFunction as AggregateFunctionName, AggregateUDF, LogicalPlan,
-    LogicalPlanBuilder, Projection, TableProviderAggregationPushDown, TableScan,
-    TableScanAggregate,
+    Aggregate, AggregateUDF, LogicalPlan, LogicalPlanBuilder, Projection,
+    TableProviderAggregationPushDown, TableScan, TableScanAggregate,
 };
-use datafusion::optimizer::{optimize_children, OptimizerConfig, OptimizerRule};
+use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use datafusion::prelude::Expr;
 
 /// Push Down Aggregation optimizer rule pushes aggregation clauses down the plan
 /// # Introduction
 /// TODO
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PushDownAggregation {}
 
 impl PushDownAggregation {
@@ -51,9 +50,9 @@ impl OptimizerRule for PushDownAggregation {
 
     fn rewrite(
         &self,
-        plan: &LogicalPlan,
+        plan: LogicalPlan,
         config: &dyn OptimizerConfig,
-    ) -> Result<Option<LogicalPlan>> {
+    ) -> DFResult<Transformed<LogicalPlan>> {
         if let LogicalPlan::Aggregate(Aggregate {
             input,
             group_expr,
@@ -62,14 +61,14 @@ impl OptimizerRule for PushDownAggregation {
             ..
         }) = plan
         {
-            if !determine_whether_support_push_down(aggr_expr) {
+            if !determine_whether_support_push_down(&aggr_expr) {
                 return Ok(None);
             }
 
             let mut temp_input = input;
 
             if let LogicalPlan::Projection(Projection { input, .. }) = temp_input.deref() {
-                temp_input = input;
+                temp_input = input.clone();
             }
 
             if let LogicalPlan::TableScan(TableScan {
@@ -84,7 +83,7 @@ impl OptimizerRule for PushDownAggregation {
             {
                 if aggregate.is_none() && filters.is_empty() {
                     let new_plan = match source
-                        .supports_aggregate_pushdown(group_expr, aggr_expr)?
+                        .supports_aggregate_pushdown(&group_expr, &aggr_expr)?
                     {
                         TableProviderAggregationPushDown::Unsupported => None,
                         TableProviderAggregationPushDown::Ungrouped => {
@@ -114,6 +113,7 @@ impl OptimizerRule for PushDownAggregation {
                                             filter,
                                             order_by,
                                             null_treatment,
+                                            can_be_pushed_down,
                                         },
                                     }) => {
                                         let new_agg_func = match func.name() {
@@ -145,26 +145,26 @@ impl OptimizerRule for PushDownAggregation {
                                                 }
                                             }, */
                                             "count" => {
-                                                AggregateFunction::new_udf(Arc::new(AggregateUDF::new_from_impl(Sum::new())), vec![Expr::Column(column)], *distinct, filter.clone(), order_by.clone(), None)
-                                                // AggregateFunction {
-                                                //     fun: AggregateFunctionName::Sum,
-                                                //     args: vec![Expr::Column(column)],
-                                                //     distinct: *distinct,
-                                                //     filter: filter.clone(),
-                                                //     order_by: order_by.clone(),
-                                                //     can_be_pushed_down: *can_be_pushed_down,
-                                                // }
+                                                AggregateFunction::new_udf(
+                                                    Arc::new(AggregateUDF::new_from_impl(Sum::new())),
+                                                    vec![Expr::Column(column)],
+                                                    *distinct,
+                                                    filter.clone(),
+                                                    order_by.clone(),
+                                                    null_treatment.clone(),
+                                                    *can_be_pushed_down
+                                                )
                                             },
                                             // not support other agg func
-                                            _ => return Err(DataFusionError::Internal(format!("Unreachable, not support {fun:?} push down."))),
+                                            _ => return Err(DataFusionError::Internal(format!("Unreachable, not support {func:?} push down."))),
                                         };
 
-                                        Ok(Expr::AggregateFunction(new_agg_func))
+                                        Expr::AggregateFunction(new_agg_func)
                                     },
-                                    _ => Err(DataFusionError::Internal("Invalid logical plan, Aggregate's aggr_expr contains non-aggregate expr.".to_string())),
-                                }?;
+                                    _ => return Err(DataFusionError::Internal("Invalid logical plan, Aggregate's aggr_expr contains non-aggregate expr.".to_string())),
+                                };
 
-                                let alias = Expr::Column(Column::from_name(new_expr.display_name()?)).alias(col_name);
+                                let alias = Expr::Column(Column::from_name(new_expr.schema_name())).alias(col_name);
 
                                 Ok((new_expr, alias))
                             })
@@ -175,7 +175,7 @@ impl OptimizerRule for PushDownAggregation {
 
                             // Find distinct group by exprs in the case where we have a grouping set
                             let mut new_required_columns = Default::default();
-                            let all_group_expr: Vec<Expr> = grouping_set_to_exprlist(group_expr)?;
+                            let all_group_expr: Vec<Expr> = grouping_set_to_exprlist(&group_expr)?;
                             exprlist_to_columns(&all_group_expr, &mut new_required_columns)?;
 
                             let projection_expr = new_required_columns
@@ -252,16 +252,15 @@ fn determine_whether_support_push_down(aggr_expr: &[Expr]) -> bool {
                     filter,
                     order_by,
                     null_treatment,
+                    can_be_pushed_down,
                 },
             ..
         }) => {
             let support_agg_func = matches!(
-                fun,
-                /* AggregateFunctionName::Max
-                | AggregateFunctionName::Min
-                | AggregateFunctionName::Sum
-                |  */
-                AggregateFunctionName::Count
+                func.name(),
+                "count" // | "sum"
+                        // | "min"
+                        // | "max"
             );
 
             support_agg_func && !distinct

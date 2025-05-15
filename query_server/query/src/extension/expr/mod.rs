@@ -19,7 +19,7 @@ use spi::QueryResult;
 pub use ts_gen_func::TimeSeriesGenFunc;
 pub use window::{
     ceil_sliding_window, floor_sliding_window, time_window_signature, DEFAULT_TIME_WINDOW_START,
-    TIME_WINDOW, TIME_WINDOW_UDF, WINDOW_COL_NAME, WINDOW_END, WINDOW_START,
+    TIME_WINDOW, WINDOW_COL_NAME, WINDOW_END, WINDOW_START,
 };
 
 pub static INTERVALS: &[DataType] = &[

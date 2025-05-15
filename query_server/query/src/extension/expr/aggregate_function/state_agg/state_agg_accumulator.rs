@@ -52,7 +52,7 @@ impl Accumulator for StateAggAccumulator {
         })
     }
 
-    fn evaluate(&self) -> DFResult<ScalarValue> {
+    fn evaluate(&mut self) -> DFResult<ScalarValue> {
         let indices = self.state.sort_indices();
 
         let mut state_agg_data = StateAggData::new(
@@ -98,7 +98,7 @@ impl Accumulator for StateAggAccumulator {
         std::mem::size_of_val(self)
     }
 
-    fn state(&self) -> DFResult<Vec<ScalarValue>> {
+    fn state(&mut self) -> DFResult<Vec<ScalarValue>> {
         if self.state.is_empty() {
             return empty_intermediate_state(&self.input_type);
         }
@@ -133,7 +133,7 @@ impl Accumulator for StateAggAccumulator {
 fn empty_intermediate_state(state_type: &[DataType]) -> DFResult<Vec<ScalarValue>> {
     let result = state_type
         .iter()
-        .map(|e| ScalarValue::new_list(Some(vec![]), e.clone()))
+        .map(|dt| ScalarValue::new_list_nullable(&[], dt))
         .collect();
 
     Ok(result)
@@ -188,22 +188,22 @@ impl IntermediateState {
 
         (0..times.len()).try_for_each(|index| {
             let scalar = ScalarValue::try_from_array(times.as_ref(), index)?;
-            if let ScalarValue::List(Some(values), _) = scalar {
-                time_records.extend(values);
+            if let ScalarValue::List(list_array) = scalar {
+                time_records.extend(list_array.values());
             } else {
                 return Err(DataFusionError::Internal(format!(
                     "compact_state_agg state must be non-null list, but found: {}",
-                    scalar.get_datatype()
+                    scalar.data_type()
                 )));
             }
 
             let scalar = ScalarValue::try_from_array(state_records.as_ref(), index)?;
-            if let ScalarValue::List(Some(values), _) = scalar {
-                state_value_records.extend(values);
+            if let ScalarValue::List(list_array) = scalar {
+                state_value_records.extend(list_array.values());
             } else {
                 return Err(DataFusionError::Internal(format!(
                     "compact_state_agg state must be non-null list, but found: {}",
-                    scalar.get_datatype()
+                    scalar.data_type()
                 )));
             }
 
@@ -223,14 +223,14 @@ impl IntermediateState {
             })));
         }
 
-        let time_data_type = self.time_records[0].get_datatype();
-        let state_data_type = self.state_value_records[0].get_datatype();
+        let time_data_type = self.time_records[0].data_type();
+        let state_data_type = self.state_value_records[0].data_type();
 
-        let time_state = ScalarValue::new_list(Some(self.time_records.clone()), time_data_type);
+        let time_state = ScalarValue::new_list_nullable(&self.time_records, &time_data_type);
         let value_state =
-            ScalarValue::new_list(Some(self.state_value_records.clone()), state_data_type);
+            ScalarValue::new_list_nullable(&self.state_value_records, &state_data_type);
 
-        trace::trace!("time_state data type: {:?}", time_state.get_datatype());
+        trace::trace!("time_state data type: {:?}", time_state.data_type());
 
         Ok(vec![time_state, value_state])
     }

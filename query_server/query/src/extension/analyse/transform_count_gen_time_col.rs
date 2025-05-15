@@ -2,8 +2,8 @@ use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::config::ConfigOptions;
 use datafusion::datasource::source_as_provider;
 use datafusion::error::Result;
-use datafusion::logical_expr::expr::AggregateFunction;
-use datafusion::logical_expr::{aggregate_function, Aggregate, LogicalPlan};
+use datafusion::logical_expr::expr::{AggregateFunction, AggregateFunctionParams};
+use datafusion::logical_expr::{Aggregate, LogicalPlan};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::Expr;
 
@@ -24,8 +24,12 @@ impl AnalyzerRule for TransformCountGenTimeColRule {
 fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
     if let LogicalPlan::Aggregate(Aggregate { aggr_expr, .. }) = &plan {
         for expr in aggr_expr {
-            if let Expr::AggregateFunction(AggregateFunction { fun, args, .. }) = &expr {
-                if fun == &aggregate_function::AggregateFunction::Count {
+            if let Expr::AggregateFunction(AggregateFunction {
+                func,
+                params: AggregateFunctionParams { args, .. },
+            }) = &expr
+            {
+                if func.name == "count" {
                     let mut only_literal = true;
                     for arg in args {
                         match arg {

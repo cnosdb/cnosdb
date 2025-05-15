@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use datafusion::common::{DFField, DFSchema, OwnedTableReference, Result as DFResult};
+use datafusion::common::{DFSchema, Result as DFResult, TableReference};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_expr::{
     Extension, LogicalPlan, LogicalPlanBuilder, Projection, TableSource,
 };
 use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
+use models::arrow::Fields;
 use models::schema::stream_table_schema::Watermark;
 use spi::query::datasource::stream::StreamProviderRef;
 use spi::query::logical_planner::{affected_row_expr, merge_affected_row_expr};
@@ -25,7 +26,7 @@ pub trait LogicalPlanBuilderExt: Sized {
     fn expand(self, projections: Vec<Vec<Expr>>) -> Result<Self>;
     fn watermark(self, watermark: Watermark) -> Result<Self>;
     fn stream_scan(
-        table_name: impl Into<OwnedTableReference>,
+        table_name: impl Into<TableReference>,
         table_source: StreamProviderRef,
     ) -> Result<Self>;
     fn write(
@@ -61,7 +62,7 @@ impl LogicalPlanBuilderExt for LogicalPlanBuilder {
 
     /// Convert a stream provider into a builder with a [`StreamScanPlanNode`]
     fn stream_scan(
-        table_name: impl Into<OwnedTableReference>,
+        table_name: impl Into<TableReference>,
         table_source: StreamProviderRef,
     ) -> Result<Self> {
         let table_name = table_name.into();
@@ -194,7 +195,7 @@ fn add_projection_between_source_and_insert_node_if_necessary(
     source_plan: LogicalPlan,
     insert_columns: &[String],
 ) -> DFResult<LogicalPlan> {
-    let insert_col_name_with_source_field_tuples: Vec<(&String, &DFField)> = insert_columns
+    let insert_col_name_with_source_field_tuples: Vec<(&String, &Fields)> = insert_columns
         .iter()
         .zip(source_plan.schema().fields())
         .collect();

@@ -3,14 +3,14 @@ use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use datafusion::common::{DFSchema, DFSchemaRef};
-use datafusion::error::DataFusionError;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::{Column, Expr};
 use models::schema::stream_table_schema::Watermark;
 
 use crate::extension::{EVENT_TIME_COLUMN, WATERMARK_DELAY_MS};
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct WatermarkNode {
     pub watermark: Watermark,
     pub input: Arc<LogicalPlan>,
@@ -77,21 +77,21 @@ impl UserDefinedLogicalNodeCore for WatermarkNode {
         )
     }
 
-    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
-        assert_eq!(inputs.len(), 1, "input size inconsistent");
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if inputs.len() != 1 {
+            return Err(DataFusionError::Plan(
+                "WatermarkNode should have exactly one input".to_string(),
+            ));
+        }
 
-        Self {
+        Ok(Self {
             watermark: self.watermark.clone(),
             input: Arc::new(inputs[0].clone()),
             schema: self.schema.clone(),
-        }
+        })
     }
 
     fn prevent_predicate_push_down_columns(&self) -> std::collections::HashSet<String> {
         HashSet::default()
-    }
-
-    fn name(&self) -> &str {
-        "Watermark"
     }
 }

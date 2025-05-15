@@ -4,8 +4,7 @@ use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::ScalarUDF;
 use geo::{
-    EuclideanDistance, Geometry, Line, LineString, MultiLineString, MultiPoint, MultiPolygon,
-    Point, Polygon, Triangle,
+    Geometry, Line, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Triangle,
 };
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;

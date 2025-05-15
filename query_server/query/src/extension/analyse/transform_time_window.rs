@@ -7,11 +7,11 @@ use datafusion::config::ConfigOptions;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::ExecutionProps;
 use datafusion::logical_expr::utils::expand_wildcard;
-use datafusion::logical_expr::{expr, GetIndexedField, LogicalPlan, LogicalPlanBuilder};
+use datafusion::logical_expr::{expr, LogicalPlan, LogicalPlanBuilder};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::optimizer::simplify_expressions::{ExprSimplifier, SimplifyContext};
 use datafusion::optimizer::{OptimizerConfig, OptimizerContext};
-use datafusion::prelude::{and, cast, col, lit, named_struct, Expr};
+use datafusion::prelude::{and, cast, col, get_field, lit, named_struct, Expr};
 use datafusion::scalar::ScalarValue;
 use models::duration::DAY;
 use spi::QueryError;
@@ -93,17 +93,17 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
 fn find_window_exprs(plan: &LogicalPlan) -> Vec<Expr> {
     let exprs = plan.expressions();
     find_exprs_in_exprs_deeply_nested(&exprs, &|nested_expr| {
-        matches!(nested_expr, Expr::ScalarUDF(expr::ScalarUDF {
-            fun,
+        matches!(nested_expr, Expr::ScalarFunction(expr::ScalarFunction {
+            func,
             ..
-        }) if fun.name == TIME_WINDOW)
+        }) if func.name == TIME_WINDOW)
     })
 }
 
 fn make_time_window(expr: Expr, schema: DFSchemaRef) -> Result<TimeWindow, QueryError> {
     let window_alias = expr.display_name()?;
     match expr {
-        Expr::ScalarUDF(expr::ScalarUDF { fun, args }) if fun.name == TIME_WINDOW => {
+        Expr::ScalarUDF(expr::ScalarFunction { func, args }) if func.name == TIME_WINDOW => {
             let mut args = args.into_iter();
 
             // first arg: time_column
@@ -371,14 +371,11 @@ fn build_sliding_window_plan(
         is_not_null(time_column.clone())
     } else {
         let window_expr = Box::new(windows[0].clone());
-        let start = Expr::GetIndexedField(GetIndexedField::new(
+        let start = get_field(
             window_expr.clone(),
             ScalarValue::Utf8(Some(WINDOW_START.to_string())),
-        ));
-        let end = Expr::GetIndexedField(GetIndexedField::new(
-            window_expr,
-            ScalarValue::Utf8(Some(WINDOW_END.to_string())),
-        ));
+        );
+        let end = get_field(window_expr, ScalarValue::Utf8(Some(WINDOW_END.to_string())));
         and(ge(time_column.clone(), start), lt(time_column.clone(), end))
     };
 
@@ -405,10 +402,10 @@ fn build_sliding_window_plan(
 /// Replace udf [`TIME_WINDOW`] with the specified expression
 fn replace_window_expr(new_expr: Expr, plan: &LogicalPlan) -> Result<LogicalPlan> {
     plan.transform_expressions_down(&|expr: &Expr| {
-        if matches!(expr, Expr::ScalarUDF(expr::ScalarUDF {
-            fun,
+        if matches!(expr, Expr::ScalarUDF(expr::ScalarFunction {
+            func,
             ..
-        }) if fun.name == TIME_WINDOW)
+        }) if func.name == TIME_WINDOW)
         {
             Some(new_expr.clone())
         } else {

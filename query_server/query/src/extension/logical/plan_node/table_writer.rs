@@ -3,12 +3,12 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use datafusion::common::{DFSchema, DFSchemaRef};
-use datafusion::error::DataFusionError;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::utils::exprlist_to_fields;
 use datafusion::logical_expr::{Extension, LogicalPlan, TableSource, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
 
-#[derive(Clone)]
+#[derive(Clone, PartialOrd)]
 pub struct TableWriterPlanNode {
     pub target_table_name: String,
     pub target_table: Arc<dyn TableSource>,
@@ -102,15 +102,19 @@ impl UserDefinedLogicalNodeCore for TableWriterPlanNode {
         Ok(())
     }
 
-    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
-        debug_assert_eq!(inputs.len(), 1, "input size inconsistent");
-        TableWriterPlanNode {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if inputs.len() != 1 {
+            return Err(DataFusionError::Plan(
+                "TableWriterPlanNode: input size inconsistent".to_string(),
+            ));
+        }
+        Ok(TableWriterPlanNode {
             target_table_name: self.target_table_name.clone(),
             target_table: self.target_table.clone(),
             input: Arc::new(inputs[0].clone()),
             exprs,
             schema: self.schema.clone(),
-        }
+        })
     }
 }
 

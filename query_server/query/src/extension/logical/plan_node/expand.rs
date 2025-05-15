@@ -1,13 +1,15 @@
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
-use datafusion::common::{DFField, DFSchema, DFSchemaRef};
-use datafusion::error::DataFusionError;
+use datafusion::common::{DFSchema, DFSchemaRef};
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::utils::exprlist_to_fields;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
+use datafusion::sql::TableReference;
+use models::arrow::Field;
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct ExpandNode {
     pub projections: Vec<Vec<Expr>>,
     /// The incoming logical plan
@@ -25,27 +27,27 @@ impl ExpandNode {
     ) -> Result<Self, DataFusionError> {
         // Check whether the output schemas of multiple projections are consistent,
         // and if they are inconsistent, an error will be reported
-        let mut fields: Option<Vec<DFField>> = None;
+        let mut qualified_fields: Option<Vec<(Option<TableReference>, Arc<Field>)>> = None;
 
-        for proj in &projections {
-            let proj_schema = exprlist_to_fields(proj, &input)?;
+        for proj_expr in &projections {
+            let proj_schema = exprlist_to_fields(proj_expr, &input)?;
 
-            if let Some(ref fields) = fields {
+            if let Some(ref fields) = qualified_fields {
                 if fields != &proj_schema {
                     return Err(DataFusionError::Internal(
                         format!("Expand's projections must have same output schema, but found: {fields:?} and {proj_schema:?}")));
                 }
             } else {
-                let _ = fields.insert(proj_schema);
+                let _ = qualified_fields.insert(proj_schema);
             }
         }
 
-        let fields = fields.ok_or_else(|| {
+        let qualified_fields = qualified_fields.ok_or_else(|| {
             DataFusionError::Internal("Projections of Expand not be empty".to_string())
         })?;
 
         let schema = Arc::new(DFSchema::new_with_metadata(
-            fields,
+            qualified_fields,
             input.schema().metadata().clone(),
         )?);
 
@@ -103,14 +105,18 @@ impl UserDefinedLogicalNodeCore for ExpandNode {
     }
 
     /// TODO [`PushDownProjection`] has no effect on this node
-    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
-        assert_eq!(inputs.len(), 1, "input size inconsistent");
-        Self {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if inputs.len() != 1 {
+            return Err(DataFusionError::Plan(
+                "ExpandNode only support one input".to_string(),
+            ));
+        }
+        Ok(Self {
             projections: self.projections.clone(),
             input: Arc::new(inputs[0].clone()),
             expressions: self.expressions.clone(),
             schema: self.schema.clone(),
-        }
+        })
     }
 }
 

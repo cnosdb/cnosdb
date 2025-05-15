@@ -89,11 +89,11 @@ impl TransformTimeSeriesGenFunc {
         let time_expr = &args[0];
         let field_expr = &args[1];
         let field_type = udf.return_type(&arg_types)?;
-        let ext_arg_expr = if args.len() >= 3 {
+        let arg_expr = if args.len() >= 3 {
             let ext_arg = &args[args.len() - 1];
             // TODO(zipper): ext_arg is a string expression but not a literal value.
             if !matches!(ext_arg, Some(Expr::Literal(ScalarValue::Utf8(Some(_))))) {
-                return Err(datafusion::error::DataFusionError::Plan(format(
+                return Err(datafusion::error::DataFusionError::Plan(format!(
                     "{} expects the last argument to be a string, but got {ext_arg:?}",
                     udf.name(),
                 )));

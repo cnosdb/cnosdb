@@ -1,4 +1,4 @@
-use datafusion::common::tree_node::{RewriteRecursion, TreeNodeRewriter};
+use datafusion::common::tree_node::{Transformed, TreeNodeRewriter};
 use datafusion::error::Result;
 use datafusion::prelude::Expr;
 
@@ -16,17 +16,10 @@ impl<'a, F> TreeNodeRewriter for ExprReplacer<'a, F>
 where
     F: Fn(&Expr) -> Option<Expr>,
 {
-    type N = Expr;
-
-    /// Invoked before any children of `expr` are rewritten /
-    /// visited. Default implementation returns `Ok(RewriteRecursion::Continue)`
-    fn pre_visit(&mut self, _expr: &Expr) -> Result<RewriteRecursion> {
-        Ok(RewriteRecursion::Continue)
-    }
-
+    type Node = Expr;
     /// Invoked after all children of `expr` have been mutated and
     /// returns a potentially modified expr.
-    fn mutate(&mut self, expr: Expr) -> Result<Expr> {
+    fn f_up(&mut self, expr: Expr) -> Result<Transformed<Self::Node>> {
         if let Some(new_expr) = (self.replacer)(&expr) {
             return Ok(new_expr);
         }

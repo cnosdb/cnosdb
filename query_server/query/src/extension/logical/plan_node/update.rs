@@ -2,14 +2,14 @@ use std::fmt::{self, Debug};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use datafusion::common::{DFSchemaRef, OwnedTableReference, ToDFSchema};
+use datafusion::common::{DFSchemaRef, TableReference, ToDFSchema};
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::{LogicalPlan, TableSource, UserDefinedLogicalNodeCore};
 use datafusion::prelude::{Column, Expr};
-use spi::DFResult;
 
-#[derive(Clone)]
+#[derive(Clone, PartialOrd)]
 pub struct UpdateNode {
-    pub table_name: OwnedTableReference,
+    pub table_name: TableReference,
     // table for update
     pub table_source: Arc<dyn TableSource>,
     // set
@@ -42,7 +42,7 @@ impl Eq for UpdateNode {}
 
 impl UpdateNode {
     pub fn try_new(
-        table_name: impl Into<OwnedTableReference>,
+        table_name: impl Into<TableReference>,
         table_source: Arc<dyn TableSource>,
         assigns: Vec<(Column, Expr)>,
         filter: Expr,
@@ -97,15 +97,19 @@ impl UserDefinedLogicalNodeCore for UpdateNode {
         )
     }
 
-    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
-        assert_eq!(inputs.len(), 0, "input size inconsistent");
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if !inputs.is_empty() {
+            return Err(DataFusionError::Plan(
+                "UpdateNode should have exactly one input".to_string(),
+            ));
+        }
 
-        Self {
+        Ok(Self {
             table_name: self.table_name.clone(),
             table_source: self.table_source.clone(),
             assigns: self.assigns.clone(),
             filter: self.filter.clone(),
             schema: self.schema.clone(),
-        }
+        })
     }
 }

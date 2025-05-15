@@ -141,7 +141,7 @@ impl Accumulator for IncreaseAccumulator {
         Ok(())
     }
 
-    fn evaluate(&self) -> DFResult<ScalarValue> {
+    fn evaluate(&mut self) -> DFResult<ScalarValue> {
         Ok(self.increase.clone())
     }
 
@@ -150,7 +150,7 @@ impl Accumulator for IncreaseAccumulator {
         std::mem::size_of_val(self)
     }
 
-    fn state(&self) -> DFResult<Vec<ScalarValue>> {
+    fn state(&mut self) -> DFResult<Vec<ScalarValue>> {
         Ok(vec![self.increase.clone()])
     }
 

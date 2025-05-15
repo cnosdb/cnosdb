@@ -5,11 +5,11 @@ use std::time::UNIX_EPOCH;
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::catalog::memory::MemorySourceConfig;
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::logical_plan::TableScanAggregate;
-use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::Expr;
 use meta::model::MetaClientRef;
@@ -116,10 +116,8 @@ impl TableProvider for InformationSchemaResourceStatusTable {
 
         let rb: RecordBatch = builder.try_into()?;
 
-        Ok(Arc::new(MemoryExec::try_new(
-            &[vec![rb]],
-            self.schema(),
-            projection.cloned(),
-        )?))
+        let mem_exec =
+            MemorySourceConfig::try_new_exec(&[vec![rb]], self.schema(), projection.cloned())?;
+        Ok(Arc::new(mem_exec))
     }
 }

@@ -3,12 +3,13 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use datafusion::common::DFSchemaRef;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
 
 use crate::data_source::batch::tskv::ClusterTable;
 
-#[derive(Clone)]
+#[derive(Clone, PartialOrd)]
 pub struct TagScanPlanNode {
     /// The name of the table
     pub table_name: String,
@@ -80,9 +81,17 @@ impl UserDefinedLogicalNodeCore for TagScanPlanNode {
         )
     }
 
-    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
-        assert_eq!(inputs.len(), 0, "input size inconsistent");
-        assert_eq!(exprs.len(), 0, "expr size inconsistent");
-        self.clone()
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if !inputs.is_empty() {
+            return Err(DataFusionError::Plan(
+                "TagScanPlanNode does not support inputs".to_string(),
+            ));
+        }
+        if !exprs.is_empty() {
+            return Err(DataFusionError::Plan(
+                "TagScanPlanNode does not support expressions".to_string(),
+            ));
+        }
+        Ok(self.clone())
     }
 }

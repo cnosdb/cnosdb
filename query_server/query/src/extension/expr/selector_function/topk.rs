@@ -1,48 +1,64 @@
-use std::sync::Arc;
-
-use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::DataType;
-use datafusion::error::DataFusionError;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::type_coercion::aggregates::{DATES, NUMERICS, STRINGS, TIMESTAMPS};
 use datafusion::logical_expr::{
-    ReturnTypeFunction, ScalarUDF, Signature, TypeSignature, Volatility,
+    ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, TypeSignature,
+    Volatility,
 };
-use datafusion::physical_expr::functions::make_scalar_function;
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;
 
 use super::TOPK;
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<ScalarUDF> {
-    let udf = new();
+    let udf = TopKFunc::new();
     func_manager.register_udf(udf.clone())?;
     Ok(udf)
 }
 
-fn new() -> ScalarUDF {
-    let func = |_: &[ArrayRef]| {
+pub struct TopKFunc {
+    signature: Signature,
+}
+
+impl TopKFunc {
+    pub fn new() -> Self {
+        // Accept any numeric value paired with a Int64 k
+        let type_signatures = STRINGS
+            .iter()
+            .chain(NUMERICS.iter())
+            .chain(TIMESTAMPS.iter())
+            .chain(DATES.iter())
+            // .chain(iter::once(str_dict_data_type()))
+            // .chain(TIMES.iter())
+            .map(|t| TypeSignature::Exact(vec![t.clone(), DataType::Int64]))
+            .collect();
+
+        Self {
+            signature: Signature::one_of(type_signatures, Volatility::Immutable),
+        }
+    }
+}
+
+impl ScalarUDFImpl for TopKFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        TOPK
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, arg_types: &[DataType]) -> DFResult<DataType> {
+        Ok(arg_types[0].clone())
+    }
+
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
         Err(DataFusionError::Execution(format!(
-            "{} has no specific implementation, should be converted to topk operator.",
-            TOPK
+            "{TOPK} has no specific implementation, should be converted to topk operator.",
         )))
-    };
-    let func = make_scalar_function(func);
-
-    // Accept any numeric value paired with a Int64 k
-    let type_signatures = STRINGS
-        .iter()
-        .chain(NUMERICS.iter())
-        .chain(TIMESTAMPS.iter())
-        .chain(DATES.iter())
-        // .chain(iter::once(str_dict_data_type()))
-        // .chain(TIMES.iter())
-        .map(|t| TypeSignature::Exact(vec![t.clone(), DataType::Int64]))
-        .collect();
-
-    let signature = Signature::one_of(type_signatures, Volatility::Immutable);
-
-    let return_type: ReturnTypeFunction =
-        Arc::new(move |input_expr_types| Ok(Arc::new(input_expr_types[0].clone())));
-
-    ScalarUDF::new(TOPK, &signature, &return_type, &func)
+    }
 }

@@ -2,12 +2,12 @@ use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use datafusion::common::{DFSchema, DFSchemaRef};
-use datafusion::error::DataFusionError;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::utils::exprlist_to_fields;
 use datafusion::logical_expr::{Extension, LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct TableWriterMergePlanNode {
     pub input: Arc<LogicalPlan>,
     pub agg_expr: Vec<Expr>,
@@ -59,13 +59,17 @@ impl UserDefinedLogicalNodeCore for TableWriterMergePlanNode {
         Ok(())
     }
 
-    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
-        debug_assert_eq!(inputs.len(), 1, "input size inconsistent");
-        TableWriterMergePlanNode {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if inputs.len() != 1 {
+            return Err(DataFusionError::Plan(
+                "TableWriterMergePlanNode should have exactly one input".to_string(),
+            ));
+        }
+        Ok(TableWriterMergePlanNode {
             input: Arc::new(inputs[0].clone()),
             agg_expr: exprs,
             schema: self.schema.clone(),
-        }
+        })
     }
 }
 

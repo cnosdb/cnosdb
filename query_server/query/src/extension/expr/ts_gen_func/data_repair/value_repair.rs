@@ -1,12 +1,12 @@
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 use std::rc::Rc;
+use std::sync::Arc;
 
-use datafusion::error::Result as DFResult;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl, Signature};
 use models::arrow::DataType;
 use serde::Deserialize;
-use spi::DFResult;
 
 use crate::extension::expr::ts_gen_func::utils::{full_signatures, get_arg};
 
@@ -40,7 +40,7 @@ impl ScalarUDFImpl for ValueRepairFunc {
     }
 
     fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
-        uErr(DataFusionError::Plan(format!(
+        Err(DataFusionError::Plan(format!(
             "{} can only be used in the SELECT clause as the top-level expression",
             self.name()
         )))

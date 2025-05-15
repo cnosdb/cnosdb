@@ -7,19 +7,20 @@ use coordinator::service::CoordinatorRef;
 use datafusion::arrow::array::Int64Array;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::catalog::memory::MemorySourceConfig;
 use datafusion::common::DFSchema;
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::SessionState;
-use datafusion::logical_expr::expr::AggregateFunction;
+use datafusion::logical_expr::expr::{AggregateFunction, AggregateFunctionParams};
 use datafusion::logical_expr::logical_plan::TableScanAggregate;
+use datafusion::logical_expr::utils::find_exprs_in_exprs;
 use datafusion::logical_expr::{
-    aggregate_function, Expr, TableProviderAggregationPushDown, TableProviderFilterPushDown,
+    Expr, TableProviderAggregationPushDown, TableProviderFilterPushDown,
 };
-use datafusion::optimizer::utils::{conjunction, split_conjunction};
+use datafusion::physical_expr::utils::{conjunction, split_conjunction};
 use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::empty::EmptyExec;
-use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use datafusion::prelude::Column;
 use meta::error::MetaError;
@@ -107,7 +108,7 @@ impl ClusterTable {
             .map_err(|err| DataFusionError::External(Box::new(err)))?;
 
         // Parsing Aggregate Functions
-        let aggs = aggr_expr
+        let agg_functions = aggr_expr
             .iter()
             .map(|e| match e {
                 Expr::AggregateFunction(agg) => Ok(agg),
@@ -118,9 +119,7 @@ impl ClusterTable {
             .collect::<Result<Vec<_>>>()?;
 
         // Check if all aggregate functions are Count
-        let all_are_count = aggs
-            .iter()
-            .any(|agg| matches!(agg.fun, aggregate_function::AggregateFunction::Count));
+        let all_are_count = agg_functions.iter().any(|agg| agg.func.name() == "count");
 
         // Handling the empty shard
         if splits.is_empty() {
@@ -131,11 +130,8 @@ impl ClusterTable {
                 let num_count = Int64Array::from(vec![0]);
                 let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(num_count)])
                     .map_err(DataFusionError::ArrowError)?;
-                return Ok(Arc::new(MemoryExec::try_new(
-                    &[vec![batch]],
-                    proj_schema,
-                    None,
-                )?));
+                let mem_exec = MemorySourceConfig::try_new_exec(&[vec![batch]], proj_schema, None)?;
+                return Ok(Arc::new(mem_exec));
             } else {
                 return Ok(Arc::new(EmptyExec::new(proj_schema)));
             }
@@ -146,7 +142,7 @@ impl ClusterTable {
             Column::from_name(&self.schema.get_column_by_index(0).unwrap_unchecked().name)
         };
 
-        let aggs = agg_expr
+        let agg_functions = aggr_expr
             .iter()
             .map(|e| match e {
                 Expr::AggregateFunction(agg) => Ok(agg),
@@ -156,12 +152,12 @@ impl ClusterTable {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let pushed_aggs = aggs
+        let pushed_agg_functions = agg_functions
         .into_iter()
         .map(|agg| {
-            let AggregateFunction { fun, args, .. } = agg;
+            let AggregateFunction { func, params, .. } = agg;
 
-            args.iter()
+            params.args.iter()
                 .map(|expr| {
                     // The parameter of the aggregate function pushed down must be a column column
                     match expr {
@@ -175,8 +171,8 @@ impl ClusterTable {
                 .collect::<Result<Vec<_>>>()
                 .and_then(|columns| {
                     // Convert pushdown aggregate functions to intermediate structures
-                    match fun {
-                        aggregate_function::AggregateFunction::Count => {
+                    match func.name() {
+                        "count" => {
                             let column = columns
                                 .first()
                                 .ok_or_else(|| {
@@ -200,7 +196,7 @@ impl ClusterTable {
             self.coord.clone(),
             proj_schema,
             self.schema.clone(),
-            pushed_aggs,
+            pushed_agg_functions,
             filter,
             splits,
         )))
@@ -230,7 +226,7 @@ impl ClusterTable {
 
         // Generate physical expressions using projected schema
         let predicate = Arc::new(
-            Predicate::push_down_filter(filter, &df_schema, &projected_schema, limit)
+            Predicate::push_down_filter(filter, &df_schema, limit)
                 .map_err(|e| DataFusionError::External(Box::new(e)))?,
         );
 
@@ -332,7 +328,7 @@ impl TableProvider for ClusterTable {
         let filters = rewrite_filters(filters, df_schema.clone())?;
         // Generate physical expressions using projected schema
         let filter = Arc::new(
-            Predicate::push_down_filter(filters, &df_schema, &arrow_schema, limit)
+            Predicate::push_down_filter(filters, &df_schema, limit)
                 .map_err(|e| DataFusionError::External(Box::new(e)))?,
         );
 
@@ -346,26 +342,34 @@ impl TableProvider for ClusterTable {
             .await;
     }
 
-    fn supports_filter_pushdown(&self, expr: &Expr) -> Result<TableProviderFilterPushDown> {
-        if has_udf_function(expr)? {
-            return Ok(TableProviderFilterPushDown::Inexact);
-        }
+    fn supports_filters_pushdown(
+        &self,
+        filters: &[&Expr],
+    ) -> Result<Vec<TableProviderFilterPushDown>> {
+        filters
+            .iter()
+            .map(|f| {
+                if has_udf_function(f)? {
+                    Ok(TableProviderFilterPushDown::Inexact)
+                } else {
+                    // FIXME: tag support Exact Filter PushDown
+                    // TODO: REMOVE
+                    let exprs = split_conjunction(f);
+                    let exprs = exprs.into_iter().cloned().collect::<Vec<_>>();
+                    if find_exprs_in_exprs(&exprs, &|nested_expr| {
+                        !expr_utils::can_exact_filter(nested_expr, self.table_schema())
+                    })
+                    .is_empty()
+                    {
+                        // all exprs are time range filter
+                        return Ok(TableProviderFilterPushDown::Exact);
+                    }
 
-        // FIXME: tag support Exact Filter PushDown
-        // TODO: REMOVE
-        let exprs = split_conjunction(expr);
-        let exprs = exprs.into_iter().cloned().collect::<Vec<_>>();
-        if expr_utils::find_exprs_in_exprs(&exprs, &|nested_expr| {
-            !expr_utils::can_exact_filter(nested_expr, self.table_schema())
-        })
-        .is_empty()
-        {
-            // all exprs are time range filter
-            return Ok(TableProviderFilterPushDown::Exact);
-        }
-
-        // tskv handle all filters
-        Ok(TableProviderFilterPushDown::Inexact)
+                    // tskv handle all filters
+                    Ok(TableProviderFilterPushDown::Inexact)
+                }
+            })
+            .collect()
     }
 
     fn supports_aggregate_pushdown(
@@ -378,15 +382,19 @@ impl TableProvider for ClusterTable {
         }
         if aggr_expr.len() == 1 {
             if let Expr::AggregateFunction(AggregateFunction {
-                fun,
-                args,
-                distinct,
-                filter,
-                order_by,
-                can_be_pushed_down,
+                func,
+                params:
+                    AggregateFunctionParams {
+                        args,
+                        distinct,
+                        filter,
+                        order_by,
+                        null_treatment: _,
+                        can_be_pushed_down,
+                    },
             }) = &aggr_expr[0]
             {
-                if matches!(fun, aggregate_function::AggregateFunction::Count)
+                if func.name() == "count"
                     && args.len() == 1
                     && !*distinct
                     && filter.is_none()
@@ -452,7 +460,7 @@ impl WriteExecExt for ClusterTable {
         _state: &SessionState,
         input: Arc<dyn ExecutionPlan>,
     ) -> Result<Arc<TableWriterExec>> {
-        let record_batch_sink_privider = Arc::new(TskvRecordBatchSinkProvider::new(
+        let record_batch_sink_provider = Arc::new(TskvRecordBatchSinkProvider::new(
             self.coord.clone(),
             self.schema.clone(),
         ));
@@ -460,7 +468,7 @@ impl WriteExecExt for ClusterTable {
         Ok(Arc::new(TableWriterExec::new(
             input,
             self.schema.name.clone(),
-            record_batch_sink_privider,
+            record_batch_sink_provider,
         )))
     }
 }

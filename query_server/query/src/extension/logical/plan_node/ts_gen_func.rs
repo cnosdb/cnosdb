@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use datafusion::common::DFSchemaRef;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::{Expr, ExprSchemable, LogicalPlan, UserDefinedLogicalNodeCore};
 use models::arrow::DataType;
 
 use crate::extension::expr::TimeSeriesGenFunc;
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, PartialOrd, Eq)]
 pub struct TimeSeriesGenFuncNode {
     pub time_expr: Expr,
     pub field_expr: Expr,
@@ -49,11 +50,19 @@ impl UserDefinedLogicalNodeCore for TimeSeriesGenFuncNode {
         )
     }
 
-    fn with_exprs_and_inputs(&self, mut exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
-        assert_eq!(inputs.len(), 1, "input size inconsistent");
+    fn with_exprs_and_inputs(
+        &self,
+        mut exprs: Vec<Expr>,
+        inputs: Vec<LogicalPlan>,
+    ) -> DFResult<Self> {
+        if inputs.len() != 1 {
+            return Err(DataFusionError::Plan(
+                "TimeSeriesGenFuncNode should have exactly one input".to_string(),
+            ));
+        }
 
         let input = inputs.remove(0);
-        let ext_arg_expr = if exprs.len() >= 3 {
+        let arg_expr = if exprs.len() >= 3 {
             match exprs[exprs.len() - 1].get_type(inputs.schema()) {
                 Ok(DataType::Utf8) => exprs.pop(),
                 _ => None,
@@ -63,13 +72,13 @@ impl UserDefinedLogicalNodeCore for TimeSeriesGenFuncNode {
         };
         let time_expr = exprs[0].clone();
         let field_expr = exprs[1].clone();
-        Self {
+        Ok(Self {
             time_expr,
             field_expr,
             arg_expr,
             input: Arc::new(input),
             symbol: self.symbol,
             schema: self.schema.clone(),
-        }
+        })
     }
 }

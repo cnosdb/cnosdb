@@ -1,7 +1,7 @@
 use datafusion::arrow::datatypes::DataType;
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
-use datafusion::logical_expr::utils::find_exprs_in_expr;
+use datafusion::logical_expr::utils::find_exprs_in_exprs;
 use datafusion::logical_expr::{expr, BinaryExpr, Operator};
 use datafusion::prelude::Expr;
 use models::schema::tskv_table_schema::TskvTableSchemaRef;
@@ -104,29 +104,13 @@ pub fn find_selector_function_exprs(exprs: &[Expr]) -> Vec<Expr> {
     find_exprs_in_exprs(exprs, &|nested_expr| {
         matches!(
             nested_expr,
-            Expr::ScalarUDF(expr::ScalarUDF {
-                fun,
+            Expr::ScalarUDF(expr::ScalarFunction {
+                func,
                 ..
-            }) if fun.name.eq_ignore_ascii_case(BOTTOM)
-            || fun.name.eq_ignore_ascii_case(TOPK)
+            }) if func.name.eq_ignore_ascii_case(BOTTOM)
+            || func.name.eq_ignore_ascii_case(TOPK)
         )
     })
-}
-
-/// Search the provided `Expr`'s, not has their nested `Expr`
-pub fn find_exprs_in_exprs<F>(exprs: &[Expr], test_fn: &F) -> Vec<Expr>
-where
-    F: Fn(&Expr) -> bool,
-{
-    exprs
-        .iter()
-        .filter(|e| test_fn(e))
-        .fold(vec![], |mut acc, expr| {
-            if !acc.contains(expr) {
-                acc.push(expr.clone())
-            }
-            acc
-        })
 }
 
 /// Collect all deeply nested selector function. They are returned in order of occurrence (depth
@@ -135,11 +119,11 @@ pub fn find_selector_function_exprs_deeply_nested(exprs: &[Expr]) -> Vec<Expr> {
     find_exprs_in_exprs_deeply_nested(exprs, &|nested_expr| {
         matches!(
             nested_expr,
-            Expr::ScalarUDF(expr::ScalarUDF {
-                fun,
+            Expr::ScalarUDF(expr::ScalarFunction {
+                func,
                 ..
-            }) if fun.name.eq_ignore_ascii_case(BOTTOM)
-            || fun.name.eq_ignore_ascii_case(TOPK)
+            }) if func.name.eq_ignore_ascii_case(BOTTOM)
+            || func.name.eq_ignore_ascii_case(TOPK)
         )
     })
 }
@@ -151,9 +135,8 @@ pub fn find_exprs_in_exprs_deeply_nested<F>(exprs: &[Expr], test_fn: &F) -> Vec<
 where
     F: Fn(&Expr) -> bool,
 {
-    exprs
-        .iter()
-        .flat_map(|expr| find_exprs_in_expr(expr, test_fn))
+    find_exprs_in_exprs(exprs, test_fn)
+        .into_iter()
         .fold(vec![], |mut acc, expr| {
             if !acc.contains(&expr) {
                 acc.push(expr)

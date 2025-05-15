@@ -3,11 +3,12 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use datafusion::common::{DFSchema, DFSchemaRef};
-use datafusion::error::DataFusionError;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::utils::exprlist_to_fields;
 use datafusion::logical_expr::{Extension, LogicalPlan, TableSource, UserDefinedLogicalNodeCore};
 use datafusion::prelude::{Column, Expr};
 
+#[derive(PartialOrd)]
 pub struct UpdateTagPlanNode {
     pub table_name: String,
     pub table_source: Arc<dyn TableSource>,
@@ -98,16 +99,20 @@ impl UserDefinedLogicalNodeCore for UpdateTagPlanNode {
         Ok(())
     }
 
-    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
-        debug_assert_eq!(inputs.len(), 1, "input size inconsistent");
-        UpdateTagPlanNode {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if inputs.len() != 1 {
+            return Err(DataFusionError::Plan(
+                "UpdateTagPlanNode only supports one input".to_string(),
+            ));
+        }
+        Ok(UpdateTagPlanNode {
             table_name: self.table_name.clone(),
             table_source: self.table_source.clone(),
             scan: Arc::new(inputs[0].clone()),
             assigns: self.assigns.clone(),
             exprs,
             schema: self.schema.clone(),
-        }
+        })
     }
 }
 

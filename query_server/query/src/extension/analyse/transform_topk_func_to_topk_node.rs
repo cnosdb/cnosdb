@@ -1,6 +1,7 @@
 use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::config::ConfigOptions;
 use datafusion::error::{DataFusionError, Result};
+use datafusion::logical_expr::utils::find_exprs_in_exprs;
 use datafusion::logical_expr::{expr, LogicalPlan, LogicalPlanBuilder, Projection, Sort};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::Expr;
@@ -98,13 +99,13 @@ fn valid_exprs(exprs: &[Expr]) -> Result<bool> {
 }
 
 fn extract_topk_function(exprs: &[Expr]) -> Option<Expr> {
-    expr_utils::find_exprs_in_exprs(exprs, &|nested_expr| {
+    find_exprs_in_exprs(exprs, &|nested_expr| {
         matches!(
             nested_expr,
-            Expr::ScalarUDF(expr::ScalarUDF {
-                fun,
+            Expr::ScalarUDF(expr::ScalarFunction {
+                func,
                 ..
-            }) if fun.name.eq_ignore_ascii_case(TOPK)
+            }) if func.name.eq_ignore_ascii_case(TOPK)
         )
     })
     .first()
@@ -112,7 +113,7 @@ fn extract_topk_function(exprs: &[Expr]) -> Option<Expr> {
 }
 
 fn extract_args(expr: &Expr) -> Result<(Expr, usize)> {
-    if let Expr::ScalarUDF(expr::ScalarUDF { fun: _, args }) = expr {
+    if let Expr::ScalarUDF(expr::ScalarFunction { func: _, args }) = expr {
         if args.len() != 2 {
             return Err(DataFusionError::Plan(INVALID_ARGUMENTS.to_string()));
         }

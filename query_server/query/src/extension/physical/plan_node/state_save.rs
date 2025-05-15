@@ -11,15 +11,15 @@ use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use datafusion::execution::context::TaskContext;
 use datafusion::logical_expr::Operator;
-use datafusion::physical_expr::PhysicalSortExpr;
-use datafusion::physical_plan::expressions::{binary, Column, GetIndexedFieldExpr, Literal};
+use datafusion::physical_plan::expressions::{binary, Column, Literal};
 use datafusion::physical_plan::metrics::{
     self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
 };
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PhysicalExpr, PlanProperties,
-    RecordBatchStream, SendableRecordBatchStream, Statistics,
+    DisplayAs, DisplayFormatType, ExecutionPlan, PhysicalExpr, PlanProperties, RecordBatchStream,
+    SendableRecordBatchStream, Statistics,
 };
+use datafusion::prelude::get_field;
 use datafusion::scalar::ScalarValue;
 use futures::{Stream, StreamExt};
 use trace::debug;
@@ -348,7 +348,7 @@ fn create_watermark_predicate(
                             })?;
 
                     let arg = Arc::new(Column::new(field.name(), idx));
-                    Arc::new(GetIndexedFieldExpr::new(
+                    Arc::new(get_field(
                         arg,
                         ScalarValue::Utf8(Some(field.name().clone())),
                     ))

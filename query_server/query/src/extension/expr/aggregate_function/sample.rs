@@ -84,14 +84,14 @@ struct SampleAccumulator {
 }
 
 impl Accumulator for SampleAccumulator {
-    fn state(&self) -> DFResult<Vec<ScalarValue>> {
+    fn state(&mut self) -> DFResult<Vec<ScalarValue>> {
         if self.states.is_empty() {
             return empty_intermediate_sample_state(&self.list_type);
         }
 
         let (scalars, sample_n) = self.sample_state()?;
 
-        let state = ScalarValue::new_list(Some(scalars), self.child_type.clone());
+        let state = ScalarValue::new_list_nullable(&scalars, &self.child_type);
         let sample_n = ScalarValue::UInt32(Some(sample_n as u32));
 
         trace::trace!("SampleAccumulator state: {:?}", state);
@@ -134,7 +134,7 @@ impl Accumulator for SampleAccumulator {
         })
     }
 
-    fn evaluate(&self) -> DFResult<ScalarValue> {
+    fn evaluate(&mut self) -> DFResult<ScalarValue> {
         let result = self.state()?;
 
         trace::trace!("SampleAccumulator evaluate result: {:?}", result);

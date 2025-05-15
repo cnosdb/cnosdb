@@ -12,7 +12,7 @@ mod state_agg;
 
 use std::sync::Arc;
 
-use datafusion::arrow::array::ArrayRef;
+use datafusion::arrow::array::{Array, ArrayRef, StructArray};
 use datafusion::arrow::datatypes::{DataType, Field, Fields};
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
@@ -89,23 +89,25 @@ impl TSPoint {
 impl AggResult for TSPoint {
     fn to_scalar(self) -> DFResult<ScalarValue> {
         let TSPoint { ts, val } = self;
-        let ts_data_type = ts.get_datatype();
-        let val_data_type = val.get_datatype();
+        let ts_data_type = ts.data_type();
+        let val_data_type = val.data_type();
 
-        Ok(ScalarValue::Struct(
-            Some(vec![ts, val]),
+        Ok(ScalarValue::Struct(Arc::new(StructArray::new(
             Fields::from([
                 Arc::new(Field::new("ts", ts_data_type, true)),
                 Arc::new(Field::new("val", val_data_type, true)),
             ]),
-        ))
+            Some(vec![ts, val]),
+            None,
+        ))))
     }
 }
 
 impl TSPoint {
     pub fn try_from_scalar(scalar: ScalarValue) -> DFResult<Self> {
         match scalar {
-            ScalarValue::Struct(None, fields) => {
+            ScalarValue::Struct(struct_array) => {
+                let fields = struct_array.fields();
                 debug_assert!(fields.len() == 2, "Expected 2 fields, got {:?}", fields);
 
                 let time_data_type = fields[0].data_type();
@@ -114,7 +116,8 @@ impl TSPoint {
                 let val = ScalarValue::try_from(value_data_type)?;
                 Ok(Self { ts, val })
             }
-            ScalarValue::Struct(Some(vals), _) => {
+            ScalarValue::Struct(struct_array) => {
+                let vals = struct_array.columns();
                 let ts = vals[0].clone();
                 let val = vals[1].clone();
                 Ok(Self { ts, val })
@@ -127,22 +130,26 @@ impl TSPoint {
 
     pub fn data_type(&self) -> DFResult<DataType> {
         Ok(DataType::Struct(Fields::from([
-            Arc::new(Field::new("ts", self.ts.get_datatype(), true)),
-            Arc::new(Field::new("val", self.val.get_datatype(), true)),
+            Arc::new(Field::new("ts", self.ts.data_type(), true)),
+            Arc::new(Field::new("val", self.val.data_type(), true)),
         ])))
     }
 }
 
 fn scalar_to_points(value: ScalarValue) -> DFResult<Vec<TSPoint>> {
     match value {
-        ScalarValue::List(Some(vals), _) => {
-            let points = vals
-                .into_iter()
-                .map(TSPoint::try_from_scalar)
-                .collect::<DFResult<Vec<_>>>()?;
-            Ok(points)
+        ScalarValue::List(list_array) => {
+            if list_array.is_empty() {
+                Ok(vec![])
+            } else {
+                let points = list_array
+                    .values()
+                    .into_iter()
+                    .map(TSPoint::try_from_scalar)
+                    .collect::<DFResult<Vec<_>>>()?;
+                Ok(points)
+            }
         }
-        ScalarValue::List(None, _) => Ok(vec![]),
         _ => Err(DataFusionError::External(Box::new(QueryError::Internal {
             reason: format!("Expected list, got {:?}", value),
         }))),

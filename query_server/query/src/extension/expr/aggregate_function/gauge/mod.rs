@@ -46,7 +46,7 @@ impl GaugeData {
             Ok(value) => Ok(value),
             Err(_) => {
                 // null if overflow
-                ScalarValue::try_from(self.last.val().get_datatype())
+                ScalarValue::try_from(self.last.val().data_type())
             }
         }
     }
@@ -56,8 +56,8 @@ impl GaugeData {
             Ok(value) => Ok(value),
             Err(_) => {
                 // null if overflow
-                let zero = ScalarValue::new_zero(&self.last.ts().get_datatype())?;
-                let interval_datatype = zero.sub(&zero)?.get_datatype();
+                let zero = ScalarValue::new_zero(&self.last.ts().data_type())?;
+                let interval_datatype = zero.sub(&zero)?.data_type();
                 ScalarValue::try_from(interval_datatype)
             }
         }
@@ -84,7 +84,7 @@ impl GaugeData {
             Ok(value) => Ok(value),
             Err(_) => {
                 // null if overflow
-                ScalarValue::try_from(self.last.val().get_datatype())
+                ScalarValue::try_from(self.last.val().data_type())
             }
         }
     }
@@ -94,14 +94,14 @@ impl GaugeData {
             Ok(value) => Ok(value),
             Err(_) => {
                 // null if overflow
-                ScalarValue::try_from(self.last.val().get_datatype())
+                ScalarValue::try_from(self.last.val().data_type())
             }
         }
     }
 
     pub fn rate(&self) -> DFResult<ScalarValue> {
         if self.is_null() {
-            return ScalarValue::try_from(self.last.val().get_datatype());
+            return ScalarValue::try_from(self.last.val().data_type());
         }
 
         let last_ts: i64 = self.last.ts.clone().try_into()?;
@@ -110,7 +110,7 @@ impl GaugeData {
         let time_delta = last_ts.sub_checked(first_ts)?;
         if time_delta == 0 {
             // return Null
-            return ScalarValue::try_from(self.last.val().get_datatype());
+            return ScalarValue::try_from(self.last.val().data_type());
         }
 
         self.delta()?
@@ -135,11 +135,11 @@ impl AggResult for GaugeData {
         let last = last.to_scalar()?;
         let num_elements = ScalarValue::from(num_elements);
 
-        let first_data_type = first.get_datatype();
-        let second_data_type = second.get_datatype();
-        let penultimate_data_type = penultimate.get_datatype();
-        let last_data_type = last.get_datatype();
-        let num_elements_data_type = num_elements.get_datatype();
+        let first_data_type = first.data_type();
+        let second_data_type = second.data_type();
+        let penultimate_data_type = penultimate.data_type();
+        let last_data_type = last.data_type();
+        let num_elements_data_type = num_elements.data_type();
 
         Ok(ScalarValue::Struct(
             Some(vec![first, second, penultimate, last, num_elements]),

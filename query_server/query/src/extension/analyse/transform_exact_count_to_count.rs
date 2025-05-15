@@ -3,8 +3,9 @@ use std::sync::Arc;
 use datafusion::common::tree_node::{Transformed, TreeNode};
 use datafusion::config::ConfigOptions;
 use datafusion::error::Result;
-use datafusion::logical_expr::expr::AggregateFunction;
-use datafusion::logical_expr::{aggregate_function, Aggregate, LogicalPlan};
+use datafusion::functions_aggregate::count::Count;
+use datafusion::logical_expr::expr::{AggregateFunction, AggregateFunctionParams};
+use datafusion::logical_expr::{Aggregate, AggregateUDF, LogicalPlan};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::Expr;
 
@@ -58,14 +59,17 @@ fn transform_aggregation(aggregate: Aggregate) -> Result<Aggregate> {
     let mut new_aggr_exprs = Vec::with_capacity(aggregate.aggr_expr.len());
     for aggr_expr in aggregate.aggr_expr {
         match aggr_expr {
-            Expr::AggregateUDF(udf) if udf.fun.name == "exact_count" => {
+            Expr::AggregateFunction(udaf) if udaf.func.name == "exact_count" => {
                 let new_function = AggregateFunction {
-                    fun: aggregate_function::AggregateFunction::Count,
-                    args: udf.args,
-                    distinct: false,
-                    filter: udf.filter,
-                    order_by: udf.order_by,
-                    can_be_pushed_down: false,
+                    func: Arc::new(AggregateUDF::new_from_impl(Count::new())),
+                    params: AggregateFunctionParams {
+                        args: udaf.params.args,
+                        distinct: false,
+                        filter: udaf.params.filter,
+                        order_by: udaf.params.order_by,
+                        null_treatment: udaf.params.null_treatment,
+                        can_be_pushed_down: false,
+                    },
                 };
                 new_aggr_exprs.push(Expr::AggregateFunction(new_function));
             }

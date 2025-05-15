@@ -14,6 +14,7 @@ use crate::extension::logical::plan_node::tag_scan::TagScanPlanNode;
 ///
 /// Triggering conditions:
 /// 1. The projection contains only the tag column
+#[derive(Debug)]
 pub struct RewriteTagScan {}
 
 impl OptimizerRule for RewriteTagScan {

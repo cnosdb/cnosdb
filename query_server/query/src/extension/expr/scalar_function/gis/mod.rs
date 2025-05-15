@@ -6,7 +6,7 @@ mod st_geomfromwkb;
 
 use datafusion::error::DataFusionError;
 use geo::Geometry;
-use geozero::wkt::WktStr;
+use geozero::wkt::Wkt;
 use geozero::ToGeo;
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;
@@ -21,7 +21,7 @@ pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> QueryRes
 }
 
 pub fn str_to_geo(wkt: &str) -> Result<Geometry, DataFusionError> {
-    WktStr(wkt)
+    Wkt(wkt)
         .to_geo()
         .map_err(|err| DataFusionError::Execution(err.to_string()))
 }
@@ -37,15 +37,17 @@ macro_rules! geometry_unary_op {
     $RES_ARRAY_BUILDER: ident) => {{
         use std::sync::Arc;
 
-        use datafusion::arrow::array::{downcast_array, ArrayRef, StringArray};
+        use datafusion::arrow::array::{downcast_array, StringArray};
         use datafusion::common::DataFusionError;
-        use datafusion::logical_expr::{ReturnTypeFunction, ScalarUDF, Signature, Volatility};
-        use datafusion::physical_expr::functions::make_scalar_function;
+        use datafusion::logical_expr::{
+            ColumnarValue, ReturnTypeFunction, ScalarUDF, Signature, Volatility,
+        };
         use $crate::extension::expr::scalar_function::gis::str_to_geo;
 
         let return_type_fn: ReturnTypeFunction = Arc::new(|_| Ok(Arc::new($RES_TYPE)));
 
-        fn fun_implement(input: &[ArrayRef]) -> Result<ArrayRef, DataFusionError> {
+        fn fun_implement(args: &[ColumnarValue]) -> Result<ColumnarValue, DataFusionError> {
+            let input = ColumnarValue::values_to_arrays(args)?;
             let mut builder = $RES_ARRAY_BUILDER::new();
             let geo = input[0].as_ref();
             let geo = downcast_array::<StringArray>(geo);
@@ -63,13 +65,11 @@ macro_rules! geometry_unary_op {
             Ok(Arc::new(builder.finish()))
         }
 
-        let fun = make_scalar_function(fun_implement);
-
         ScalarUDF::new(
             $FUNC_NAME,
             &Signature::exact(vec![DataType::Utf8], Volatility::Immutable),
             &return_type_fn,
-            &fun,
+            Arc::new(fun_implement),
         )
     }};
 }
@@ -86,13 +86,15 @@ macro_rules! geometry_binary_op {
         use std::sync::Arc;
 
         use datafusion::arrow::array::{downcast_array, ArrayRef, StringArray};
-        use datafusion::logical_expr::{ReturnTypeFunction, ScalarUDF, Signature, Volatility};
-        use datafusion::physical_expr::functions::make_scalar_function;
+        use datafusion::logical_expr::{
+            ColumnarValue, ReturnTypeFunction, ScalarUDF, Signature, Volatility,
+        };
         use $crate::extension::expr::scalar_function::gis::str_to_geo;
 
         let return_type_fn: ReturnTypeFunction = Arc::new(|_| Ok(Arc::new($RES_TYPE)));
 
-        fn fun_implement(input: &[ArrayRef]) -> Result<ArrayRef, DataFusionError> {
+        fn fun_implement(args: &[ColumnarValue]) -> Result<ColumnarValue, DataFusionError> {
+            let input = ColumnarValue::values_to_arrays(args)?;
             let mut builder = $RES_ARRAY_BUILDER::new();
             let geo1 = input[0].as_ref();
             let geo2 = input[1].as_ref();
@@ -113,22 +115,20 @@ macro_rules! geometry_binary_op {
             Ok(Arc::new(builder.finish()))
         }
 
-        let fun = make_scalar_function(fun_implement);
-
         ScalarUDF::new(
             $FUN_NAME,
             &Signature::exact(vec![DataType::Utf8, DataType::Utf8], Volatility::Immutable),
             &return_type_fn,
-            &fun,
+            Arc::new(fun_implement),
         )
     }};
 }
 
 #[cfg(test)]
 mod tests {
-    use geo::{line_string, point, EuclideanDistance, Geometry, Point};
+    use geo::{line_string, point, Geometry, Point};
     use geozero::wkb::Wkb;
-    use geozero::wkt::WktStr;
+    use geozero::wkt::Wkt;
     use geozero::{CoordDimensions, ToGeo, ToWkb, ToWkt};
 
     #[test]
@@ -159,7 +159,7 @@ mod tests {
         // MULTIPOLYGON
         // GEOMETRYCOLLECTION
         // https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry
-        let wht = WktStr("POINT(1.2 1.3)");
+        let wht = Wkt("POINT(1.2 1.3)");
 
         let geo = wht.to_geo().unwrap();
 

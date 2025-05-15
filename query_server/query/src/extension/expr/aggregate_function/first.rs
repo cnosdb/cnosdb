@@ -147,7 +147,7 @@ impl Accumulator for FirstAccumulator {
         Ok(())
     }
 
-    fn evaluate(&self) -> DFResult<ScalarValue> {
+    fn evaluate(&mut self) -> DFResult<ScalarValue> {
         Ok(self.first.val().clone())
     }
 
@@ -158,7 +158,7 @@ impl Accumulator for FirstAccumulator {
             + self.first.ts().size()
     }
 
-    fn state(&self) -> DFResult<Vec<ScalarValue>> {
+    fn state(&mut self) -> DFResult<Vec<ScalarValue>> {
         Ok(vec![self.first.ts().clone(), self.first.val().clone()])
     }
 

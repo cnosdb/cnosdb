@@ -6,7 +6,7 @@ use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::ExecutionProps;
 use datafusion::logical_expr::{Expr, Operator};
 use datafusion::optimizer::simplify_expressions::{ExprSimplifier, SimplifyContext};
-use datafusion::optimizer::utils::conjunction;
+use datafusion::physical_expr::utils::conjunction;
 
 pub fn is_udf_function(expr: &Expr) -> bool {
     matches!(expr, Expr::ScalarUDF(_) | Expr::AggregateUDF(_))

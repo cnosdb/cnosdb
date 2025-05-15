@@ -12,7 +12,7 @@ macro_rules! object_accessor {
 
         let return_type_fn: ReturnTypeFunction = Arc::new(|args| {
             let null_data = $OBJECT::try_from_scalar(ScalarValue::try_from(&args[0])?)?;
-            let output = null_data.$FUNC()?.get_datatype();
+            let output = null_data.$FUNC()?.data_type();
             Ok(Arc::new(output))
         });
 

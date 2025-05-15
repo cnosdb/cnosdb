@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use datafusion::arrow::datatypes::DataType;
+use datafusion::functions_aggregate::average::AvgAccumulator;
 use datafusion::logical_expr::{create_udaf, AggregateUDF, Volatility};
-use datafusion::physical_plan::expressions::AvgAccumulator;
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;
 

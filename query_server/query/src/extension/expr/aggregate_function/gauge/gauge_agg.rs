@@ -27,7 +27,7 @@ pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<(
 fn new() -> AggregateUDF {
     let return_type_func: ReturnTypeFunction = Arc::new(move |input| {
         let result = GaugeData::try_new_null(input[0].clone(), input[1].clone())?;
-        let date_type = result.to_scalar()?.get_datatype();
+        let date_type = result.to_scalar()?.data_type();
 
         trace::trace!("return_type: {:?}", date_type);
 
@@ -37,7 +37,7 @@ fn new() -> AggregateUDF {
     let state_type_func: StateTypeFunction = Arc::new(move |input, _| {
         let null_state =
             GaugeDataBuilder::new(input[0].clone(), input[1].clone()).try_to_state()?;
-        let state_data_types = null_state.iter().map(|e| e.get_datatype()).collect();
+        let state_data_types = null_state.iter().map(|v| v.data_type()).collect();
         Ok(Arc::new(state_data_types))
     });
 
@@ -95,7 +95,7 @@ impl GaugeAggAccumulator {
 }
 
 impl Accumulator for GaugeAggAccumulator {
-    fn state(&self) -> DFResult<Vec<ScalarValue>> {
+    fn state(&mut self) -> DFResult<Vec<ScalarValue>> {
         self.state.try_to_state()
     }
 
@@ -177,7 +177,7 @@ impl Accumulator for GaugeAggAccumulator {
         Ok(())
     }
 
-    fn evaluate(&self) -> DFResult<ScalarValue> {
+    fn evaluate(&mut self) -> DFResult<ScalarValue> {
         let result = self
             .state
             .clone()
@@ -308,7 +308,7 @@ impl AggState for GaugeDataBuilder {
             .map(|e| e.to_scalar())
             .collect::<DFResult<Vec<_>>>()?;
         let child_type = TSPoint::try_new_null(time_data_type, value_data_type)?.data_type()?;
-        let point_list = ScalarValue::new_list(Some(scalars), child_type);
+        let point_list = ScalarValue::new_list_nullable(&scalars, &child_type);
 
         Ok(vec![point_list, num_elements])
     }

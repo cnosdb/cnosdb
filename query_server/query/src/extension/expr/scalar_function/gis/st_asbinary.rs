@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use datafusion::arrow::array::{downcast_array, ArrayRef, BinaryArray, StringArray};
+use datafusion::arrow::array::{downcast_array, BinaryArray, StringArray};
 use datafusion::arrow::datatypes::DataType;
 use datafusion::common::Result as DFResult;
-use datafusion::logical_expr::{ReturnTypeFunction, ScalarUDF, Signature, Volatility};
-use datafusion::physical_plan::functions::make_scalar_function;
-use geozero::wkt::WktStr;
+use datafusion::logical_expr::{
+    ColumnarValue, ReturnTypeFunction, ScalarUDF, Signature, Volatility,
+};
+use geozero::wkt::Wkt;
 use geozero::{CoordDimensions, ToWkb};
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;
@@ -17,15 +18,14 @@ pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResu
 }
 
 fn new() -> ScalarUDF {
-    let fun = make_scalar_function(func);
-
     let signature = Signature::exact(vec![DataType::Utf8], Volatility::Immutable);
     let return_type: ReturnTypeFunction = Arc::new(move |_| Ok(Arc::new(DataType::Binary)));
 
-    ScalarUDF::new("st_AsBinary", &signature, &return_type, &fun)
+    ScalarUDF::new("st_AsBinary", &signature, &return_type, Arc::new(func))
 }
 
-fn func(args: &[ArrayRef]) -> DFResult<ArrayRef> {
+fn func(args: &[ColumnarValue]) -> DFResult<ColumnarValue> {
+    let args = ColumnarValue::values_to_arrays(args)?;
     let wkt_arr = args[0].as_ref();
     let wkt_arr = downcast_array::<StringArray>(wkt_arr);
 
@@ -33,7 +33,7 @@ fn func(args: &[ArrayRef]) -> DFResult<ArrayRef> {
         .iter()
         .map(|opt| {
             opt.and_then(|str| {
-                let wkb = WktStr(str);
+                let wkb = Wkt(str);
                 // conversion failed to null
                 wkb.to_wkb(CoordDimensions::xy()).ok()
             })

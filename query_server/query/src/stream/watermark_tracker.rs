@@ -79,13 +79,8 @@ impl WatermarkTracker {
             let table_layout = TableLayoutHandle {
                 table: tskv_table_schema.clone(),
                 predicate: Arc::new(
-                    Predicate::push_down_filter(
-                        None,
-                        &*tskv_table_schema.build_df_schema()?,
-                        &schema,
-                        None,
-                    )
-                    .context(ModelsSnafu)?,
+                    Predicate::push_down_filter(None, &*tskv_table_schema.build_df_schema()?, None)
+                        .context(ModelsSnafu)?,
                 ),
             };
             let split_manager = SplitManager::new(coord.clone());

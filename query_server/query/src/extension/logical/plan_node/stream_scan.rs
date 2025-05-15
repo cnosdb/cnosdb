@@ -2,16 +2,17 @@ use std::collections::HashSet;
 use std::fmt::{self, Debug};
 use std::hash::{Hash, Hasher};
 
-use datafusion::common::{DFSchemaRef, OwnedTableReference};
+use datafusion::common::{DFSchemaRef, TableReference};
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
 use spi::query::datasource::stream::StreamProviderRef;
 
-#[derive(Clone)]
+#[derive(Clone, PartialOrd)]
 pub struct StreamScanPlanNode {
     /// The name of the table
-    pub table_name: OwnedTableReference,
+    pub table_name: TableReference,
     /// The source of the table
     pub source: StreamProviderRef,
     /// Optional column indices to use as a projection
@@ -83,20 +84,24 @@ impl UserDefinedLogicalNodeCore for StreamScanPlanNode {
         )
     }
 
-    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
-        assert_eq!(inputs.len(), 0, "input size inconsistent");
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if !inputs.is_empty() {
+            return Err(DataFusionError::Plan(
+                "StreamScan does not support inputs".to_string(),
+            ));
+        }
 
         if self.aggregate.is_some() {
-            self.clone()
+            Ok(self.clone())
         } else {
-            Self {
+            Ok(Self {
                 table_name: self.table_name.clone(),
                 source: self.source.clone(),
                 projection: self.projection.clone(),
                 projected_schema: self.projected_schema.clone(),
                 filters: exprs,
                 aggregate: self.aggregate.clone(),
-            }
+            })
         }
     }
 
