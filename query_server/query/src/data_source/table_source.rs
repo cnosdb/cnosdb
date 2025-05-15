@@ -5,7 +5,7 @@ use std::write;
 
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::common::{OwnedTableReference, Result as DFResult};
+use datafusion::common::{Result as DFResult, TableReference};
 use datafusion::datasource::listing::ListingTable;
 use datafusion::datasource::{provider_as_source, TableProvider};
 use datafusion::error::DataFusionError;
@@ -38,7 +38,7 @@ pub struct TableSourceAdapter {
 
 impl TableSourceAdapter {
     pub fn try_new(
-        table_ref: impl Into<OwnedTableReference>,
+        table_ref: impl Into<TableReference>,
         database_name: impl Into<String>,
         table_name: impl Into<String>,
         table_handle: impl Into<TableHandle>,
@@ -104,10 +104,6 @@ impl TableSourceAdapter {
 
 #[async_trait]
 impl TableSource for TableSourceAdapter {
-    fn name(&self) -> &str {
-        "TableSourceAdapter"
-    }
-
     fn as_any(&self) -> &dyn Any {
         self
     }

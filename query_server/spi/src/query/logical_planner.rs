@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use config::common::TenantLimiterConfig;
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::datasource::file_format::file_compression_type::FileCompressionType;
-use datafusion::error::Result as DatafusionResult;
+use datafusion::error::Result as DFResult;
 use datafusion::functions_aggregate::sum::Sum;
 use datafusion::logical_expr::expr::ScalarFunction;
 use datafusion::logical_expr::type_coercion::aggregates::{
@@ -90,11 +90,11 @@ impl ScalarUDFImpl for TableWriteFunc {
         &self.signature
     }
 
-    fn return_type(&self, _arg_types: &[DataType]) -> DatafusionResult<DataType> {
+    fn return_type(&self, _arg_types: &[DataType]) -> DFResult<DataType> {
         Ok(DataType::UInt64)
     }
 
-    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DatafusionResult<ColumnarValue> {
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
         Ok(args.args[0].clone())
     }
 }

@@ -9,7 +9,7 @@ use datafusion::datasource::file_format::json::JsonFormat;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::ListingOptions;
-use datafusion::error::{DataFusionError, Result as DataFusionResult};
+use datafusion::error::{DataFusionError, Result as DFResult};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -28,7 +28,7 @@ pub struct ExternalTableSchema {
 }
 
 impl ExternalTableSchema {
-    pub fn table_options(&self) -> DataFusionResult<ListingOptions> {
+    pub fn table_options(&self) -> DFResult<ListingOptions> {
         let file_compression_type = FileCompressionType::from_str(&self.file_compression_type)?;
         let file_type = self.file_type.to_uppercase();
         let file_format: Arc<dyn FileFormat> = match file_type.as_str() {

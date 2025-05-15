@@ -10,10 +10,9 @@ use datafusion::config::ConfigOptions;
 use datafusion::datasource::TableProvider;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource, WindowUDF};
-use datafusion::physical_expr::var_provider::is_system_variables;
 use datafusion::sql::planner::ContextProvider;
 use datafusion::sql::TableReference;
-use datafusion::variable::{VarProvider, VarType};
+use datafusion::variable::{is_system_variables, VarProvider, VarType};
 pub use information_schema_provider::{
     COLUMNS_COLUMN_NAME, COLUMNS_COLUMN_TYPE, COLUMNS_COMPRESSION_CODEC, COLUMNS_DATABASE_NAME,
     COLUMNS_DATA_TYPE, COLUMNS_TABLE_NAME, DATABASES_DATABASE_NAME, DATABASES_MAX_CACHE_READERS,
@@ -306,10 +305,7 @@ impl ContextProviderExtension for MetadataProvider {
 }
 
 impl ContextProvider for MetadataProvider {
-    fn get_table_provider(
-        &self,
-        name: TableReference,
-    ) -> datafusion::error::Result<Arc<dyn TableSource>> {
+    fn get_table_source(&self, name: TableReference) -> DFResult<Arc<dyn TableSource>> {
         Ok(self.get_table_source(name)?)
     }
 
@@ -324,6 +320,10 @@ impl ContextProvider for MetadataProvider {
 
     fn get_aggregate_meta(&self, name: &str) -> Option<Arc<AggregateUDF>> {
         self.func_manager.udaf(name).ok()
+    }
+
+    fn get_window_meta(&self, name: &str) -> Option<Arc<WindowUDF>> {
+        self.func_manager.udwf(name).ok()
     }
 
     fn get_variable_type(&self, variable_names: &[String]) -> Option<DataType> {
@@ -349,8 +349,16 @@ impl ContextProvider for MetadataProvider {
         &self.config_options
     }
 
-    fn get_window_meta(&self, name: &str) -> Option<Arc<WindowUDF>> {
-        self.func_manager.udwf(name).ok()
+    fn udf_names(&self) -> Vec<String> {
+        vec![]
+    }
+
+    fn udaf_names(&self) -> Vec<String> {
+        vec![]
+    }
+
+    fn udwf_names(&self) -> Vec<String> {
+        vec![]
     }
 }
 

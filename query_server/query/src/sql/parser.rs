@@ -11,7 +11,7 @@ use datafusion::sql::sqlparser::ast::{
 use datafusion::sql::sqlparser::dialect::keywords::Keyword;
 use datafusion::sql::sqlparser::dialect::Dialect;
 use datafusion::sql::sqlparser::parser::{IsOptional, Parser, ParserError};
-use datafusion::sql::sqlparser::tokenizer::{Span as SqlSpan, Token, TokenWithSpan, Tokenizer};
+use datafusion::sql::sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 use models::codec::Encoding;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use serde_json::Value as JsonValue;

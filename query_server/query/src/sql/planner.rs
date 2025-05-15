@@ -8,7 +8,6 @@ use async_recursion::async_recursion;
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::{DataType, Field, SchemaRef, TimeUnit};
 use datafusion::arrow::error::ArrowError;
-use datafusion::common::parsers::CompressionTypeVariant;
 use datafusion::common::tree_node::TreeNode;
 use datafusion::common::{
     Column, Constraints, DFSchema, Result as DFResult, TableReference, ToDFSchema,
