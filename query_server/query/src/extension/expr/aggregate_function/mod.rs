@@ -53,7 +53,7 @@ pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> QueryRe
 }
 
 pub trait AggResult {
-    fn to_scalar(self) -> DFResult<ScalarValue>;
+    fn into_scalar(self) -> DFResult<ScalarValue>;
 }
 
 pub trait AggState: Sized {
@@ -87,17 +87,17 @@ impl TSPoint {
 }
 
 impl AggResult for TSPoint {
-    fn to_scalar(self) -> DFResult<ScalarValue> {
+    fn into_scalar(self) -> DFResult<ScalarValue> {
         let TSPoint { ts, val } = self;
         let ts_data_type = ts.data_type();
         let val_data_type = val.data_type();
 
         Ok(ScalarValue::Struct(Arc::new(StructArray::new(
             Fields::from([
-                Arc::new(Field::new("ts", ts_data_type, true)),
-                Arc::new(Field::new("val", val_data_type, true)),
+                Field::new("ts", ts_data_type, true),
+                Field::new("val", val_data_type, true),
             ]),
-            Some(vec![ts, val]),
+            vec![ts.to_array()?, val.to_array()?],
             None,
         ))))
     }
@@ -107,23 +107,15 @@ impl TSPoint {
     pub fn try_from_scalar(scalar: ScalarValue) -> DFResult<Self> {
         match scalar {
             ScalarValue::Struct(struct_array) => {
-                let fields = struct_array.fields();
-                debug_assert!(fields.len() == 2, "Expected 2 fields, got {:?}", fields);
+                let columns = struct_array.columns();
+                debug_assert!(columns.len() == 2, "TSPoint: expect 2 columns, but got {columns:?}");
 
-                let time_data_type = fields[0].data_type();
-                let value_data_type = fields[1].data_type();
-                let ts = ScalarValue::try_from(time_data_type)?;
-                let val = ScalarValue::try_from(value_data_type)?;
-                Ok(Self { ts, val })
-            }
-            ScalarValue::Struct(struct_array) => {
-                let vals = struct_array.columns();
-                let ts = vals[0].clone();
-                let val = vals[1].clone();
+                let ts = ScalarValue::try_from_array(&columns[0], 0)?;
+                let val = ScalarValue::try_from_array(&columns[1], 0)?;
                 Ok(Self { ts, val })
             }
             _ => Err(DataFusionError::External(Box::new(QueryError::Internal {
-                reason: format!("Expected struct, got {:?}", scalar),
+                reason: format!("TSPoint: expect Struct, but got {scalar:?}"),
             }))),
         }
     }
@@ -171,7 +163,7 @@ mod tests {
 
         let expect_udaf = expect_udaf.unwrap();
 
-        let result_udaf = func_manager.udaf(&expect_udaf.name);
+        let result_udaf = func_manager.udaf(&expect_udaf.name()).await;
 
         assert!(result_udaf.is_ok(), "not get result from func manager.");
 

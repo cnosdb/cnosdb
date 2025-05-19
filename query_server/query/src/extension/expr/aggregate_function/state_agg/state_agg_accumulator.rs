@@ -78,7 +78,7 @@ impl Accumulator for StateAggAccumulator {
         }
         state_agg_data.finalize();
 
-        let result_state = state_agg_data.to_scalar()?;
+        let result_state = state_agg_data.into_scalar()?;
 
         trace::trace!(
             "CompactStateAggAccumulator evaluate result: {:?}",

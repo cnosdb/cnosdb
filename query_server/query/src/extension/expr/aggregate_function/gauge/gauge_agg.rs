@@ -27,7 +27,7 @@ pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<(
 fn new() -> AggregateUDF {
     let return_type_func: ReturnTypeFunction = Arc::new(move |input| {
         let result = GaugeData::try_new_null(input[0].clone(), input[1].clone())?;
-        let date_type = result.to_scalar()?.data_type();
+        let date_type = result.into_scalar()?.data_type();
 
         trace::trace!("return_type: {:?}", date_type);
 
@@ -182,7 +182,7 @@ impl Accumulator for GaugeAggAccumulator {
             .state
             .clone()
             .build()
-            .map(|e| e.to_scalar())
+            .map(|e| e.into_scalar())
             .unwrap_or(ScalarValue::try_from(&self.return_date_type))?;
 
         trace::trace!("GaugeAggAccumulator evaluate result: {:?}", result);
@@ -305,7 +305,7 @@ impl AggState for GaugeDataBuilder {
 
         let scalars = container
             .into_iter()
-            .map(|e| e.to_scalar())
+            .map(|e| e.into_scalar())
             .collect::<DFResult<Vec<_>>>()?;
         let child_type = TSPoint::try_new_null(time_data_type, value_data_type)?.data_type()?;
         let point_list = ScalarValue::new_list_nullable(&scalars, &child_type);

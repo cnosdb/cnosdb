@@ -119,7 +119,7 @@ impl GaugeData {
 }
 
 impl AggResult for GaugeData {
-    fn to_scalar(self) -> DFResult<ScalarValue> {
+    fn into_scalar(self) -> DFResult<ScalarValue> {
         let Self {
             first,
             second,
@@ -129,10 +129,10 @@ impl AggResult for GaugeData {
             ..
         } = self;
 
-        let first = first.to_scalar()?;
-        let second = second.to_scalar()?;
-        let penultimate = penultimate.to_scalar()?;
-        let last = last.to_scalar()?;
+        let first = first.into_scalar()?;
+        let second = second.into_scalar()?;
+        let penultimate = penultimate.into_scalar()?;
+        let last = last.into_scalar()?;
         let num_elements = ScalarValue::from(num_elements);
 
         let first_data_type = first.data_type();

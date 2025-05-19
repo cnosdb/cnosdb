@@ -35,7 +35,7 @@ pub fn new_state_agg(compact: bool) -> AggregateUDF {
 
     let return_type_func: ReturnTypeFunction = Arc::new(move |input| {
         let result = StateAggData::new(input[0].clone(), input[1].clone(), compact);
-        let date_type = result.to_scalar()?.data_type();
+        let date_type = result.into_scalar()?.data_type();
 
         trace::trace!("return_type: {:?}", date_type);
 
