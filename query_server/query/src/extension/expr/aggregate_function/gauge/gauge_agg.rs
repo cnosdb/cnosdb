@@ -3,7 +3,7 @@ use std::sync::Arc;
 use datafusion::arrow::array::{ArrayRef, UInt64Array};
 use datafusion::arrow::compute::sort_to_indices;
 use datafusion::arrow::datatypes::DataType;
-use datafusion::common::{downcast_value, DataFusionError, Result as DFResult};
+use datafusion::common::{downcast_value, Result as DFResult};
 use datafusion::logical_expr::type_coercion::aggregates::TIMESTAMPS;
 use datafusion::logical_expr::{
     AccumulatorFactoryFunction, AggregateUDF, ReturnTypeFunction, Signature, StateTypeFunction,

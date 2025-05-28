@@ -108,7 +108,10 @@ impl TSPoint {
         match scalar {
             ScalarValue::Struct(struct_array) => {
                 let columns = struct_array.columns();
-                debug_assert!(columns.len() == 2, "TSPoint: expect 2 columns, but got {columns:?}");
+                debug_assert!(
+                    columns.len() == 2,
+                    "TSPoint: expect 2 columns, but got {columns:?}"
+                );
 
                 let ts = ScalarValue::try_from_array(&columns[0], 0)?;
                 let val = ScalarValue::try_from_array(&columns[1], 0)?;

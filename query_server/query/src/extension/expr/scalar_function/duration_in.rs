@@ -22,6 +22,7 @@ pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResu
 
 fn duration_in_implement(input: &[ArrayRef]) -> Result<ArrayRef, DataFusionError> {}
 
+#[derive(Debug)]
 pub struct DurationInFunc {
     signature: Signature,
 }
@@ -93,7 +94,7 @@ impl ScalarUDFImpl for DurationInFunc {
     }
 
     fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
-        let input = ColumnarValue::values_to_arrays(args)?;
+        let input = ColumnarValue::values_to_arrays(&args.args)?;
         let array_len = input[0].len();
         let mut res = Vec::with_capacity(array_len);
         match input.len() {

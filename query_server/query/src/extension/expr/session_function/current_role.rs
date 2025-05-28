@@ -16,6 +16,7 @@ pub fn register_session_udf(df_session_ctx: &SessionContext, context: &Context) 
     ));
 }
 
+#[derive(Debug)]
 pub struct CurrentRoleFunc {
     signature: Signature,
     current_role: ArrayRef,

@@ -19,6 +19,7 @@ use datafusion::physical_planner::create_physical_sort_expr;
 use crate::extension::physical::plan_node::tskv_exec::TskvExec;
 use crate::extension::utils::downcast_execution_plan;
 
+#[derive(Debug)]
 #[non_exhaustive]
 pub struct AddSortExec {}
 

@@ -16,6 +16,7 @@ use crate::extension::physical::plan_node::assert::AssertExec;
 use crate::extension::physical::plan_node::table_writer::TableWriterExec;
 use crate::extension::utils::downcast_execution_plan;
 
+#[derive(Debug)]
 #[non_exhaustive]
 pub struct AddAssertExec {}
 

@@ -36,6 +36,7 @@ fn state_at_implement(input: &[ArrayRef]) -> Result<ArrayRef, DataFusionError> {
     Ok(array)
 }
 
+#[derive(Debug)]
 pub struct StateAtFunc {
     signature: Signature,
 }

@@ -14,6 +14,7 @@ pub fn register_session_udf(df_session_ctx: &SessionContext, context: &Context) 
     df_session_ctx.register_udf(CurrentDatabaseFunc::new(context.database().to_string()));
 }
 
+#[derive(Debug)]
 pub struct CurrentDatabaseFunc {
     signature: Signature,
     current_database: ArrayRef,

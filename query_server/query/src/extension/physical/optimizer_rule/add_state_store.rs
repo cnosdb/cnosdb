@@ -13,7 +13,7 @@ use crate::extension::physical::plan_node::state_save::StateSaveExec;
 use crate::extension::utils::downcast_execution_plan;
 use crate::stream::state_store::StateStoreFactory;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct AddStateStore<T> {
     watermark_ns: i64,
     state_store_factory: Arc<T>,

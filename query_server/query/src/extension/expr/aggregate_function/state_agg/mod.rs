@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use datafusion::arrow::datatypes::{DataType, Field};
+use datafusion::error::Result as DFResult;
+use datafusion::logical_expr::function::{AccumulatorArgs, StateFieldsArgs};
 use datafusion::logical_expr::type_coercion::aggregates::{STRINGS, TIMESTAMPS};
 use datafusion::logical_expr::{
-    AccumulatorFactoryFunction, AggregateUDF, ReturnTypeFunction, Signature, StateTypeFunction,
-    TypeSignature, Volatility,
+    Accumulator, AggregateUDFImpl, Signature, TypeSignature, Volatility,
 };
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryError;
@@ -22,63 +23,82 @@ mod state_agg_data;
 const LIST_ELEMENT_NAME: &str = "item";
 
 pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<(), QueryError> {
-    func_manager.register_udaf(new_state_agg(true))?;
-    func_manager.register_udaf(new_state_agg(false))?;
+    func_manager.register_udaf(StageAggFunction::new(true))?;
+    func_manager.register_udaf(StageAggFunction::new(false))?;
     Ok(())
 }
-pub fn new_state_agg(compact: bool) -> AggregateUDF {
-    let func_name = if compact {
-        COMPACT_STATE_AGG_UDAF_NAME
-    } else {
-        STATE_AGG_UDAF_NAME
-    };
 
-    let return_type_func: ReturnTypeFunction = Arc::new(move |input| {
-        let result = StateAggData::new(input[0].clone(), input[1].clone(), compact);
-        let date_type = result.into_scalar()?.data_type();
+#[derive(Debug)]
+pub struct StageAggFunction {
+    signature: Signature,
+    compact: bool,
+}
 
-        trace::trace!("return_type: {:?}", date_type);
-
-        Ok(Arc::new(date_type))
-    });
-
-    let state_type_func: StateTypeFunction = Arc::new(move |input, _| {
-        let types = input
+impl StageAggFunction {
+    pub fn new(compact: bool) -> Self {
+        // [compact_]state_agg(
+        //   ts TIMESTAMPTZ,
+        //   value {STRINGS | INTEGERS}
+        // ) RETURNS StateAggData
+        let type_signatures = STRINGS
             .iter()
-            .map(|dt| DataType::List(Arc::new(Field::new(LIST_ELEMENT_NAME, dt.clone(), true))))
-            .collect::<Vec<_>>();
+            .chain(INTEGERS.iter())
+            .flat_map(|t| {
+                TIMESTAMPS
+                    .iter()
+                    .map(|s_t| TypeSignature::Exact(vec![s_t.clone(), t.clone()]))
+            })
+            .collect();
 
-        trace::trace!("state_type: {:?}", types);
-
-        Ok(Arc::new(types))
-    });
-
-    let accumulator: AccumulatorFactoryFunction = Arc::new(move |input, _| {
-        Ok(Box::new(StateAggAccumulator::try_new(
-            input.to_vec(),
+        Self {
+            signature: Signature::one_of(type_signatures, Volatility::Immutable),
             compact,
-        )?))
-    });
+        }
+    }
+}
 
-    // [compact_]state_agg(
-    //   ts TIMESTAMPTZ,
-    //   value {STRINGS | INTEGERS}
-    // ) RETURNS StateAggData
-    let type_signatures = STRINGS
-        .iter()
-        .chain(INTEGERS.iter())
-        .flat_map(|t| {
-            TIMESTAMPS
+impl AggregateUDFImpl for StageAggFunction {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        if self.compact {
+            COMPACT_STATE_AGG_UDAF_NAME
+        } else {
+            STATE_AGG_UDAF_NAME
+        }
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, arg_types: &[DataType]) -> DFResult<DataType> {
+        let agg_result =
+            StateAggData::new(arg_types[0].clone(), arg_types[1].clone(), self.compact);
+        let date_type = agg_result.into_scalar()?.data_type();
+        Ok(date_type)
+    }
+
+    fn accumulator(&self, acc_args: AccumulatorArgs) -> DFResult<Box<dyn Accumulator>> {
+        Ok(Box::new(StateAggAccumulator::try_new(
+            acc_args
+                .schema
+                .fields()
                 .iter()
-                .map(|s_t| TypeSignature::Exact(vec![s_t.clone(), t.clone()]))
-        })
-        .collect();
+                .map(|f| f.data_type().clone())
+                .collect(),
+            self.compact,
+        )?))
+    }
 
-    AggregateUDF::new(
-        func_name,
-        &Signature::one_of(type_signatures, Volatility::Immutable),
-        &return_type_func,
-        &accumulator,
-        &state_type_func,
-    )
+    fn state_fields(&self, args: StateFieldsArgs) -> DFResult<Vec<Field>> {
+        let fields = args
+            .input_types
+            .iter()
+            .map(|t| Field::new_list_field(t.clone(), true))
+            .collect::<Vec<_>>();
+        Ok(Arc::new(fields))
+    }
 }

@@ -14,6 +14,7 @@ pub fn register_session_udf(df_session_ctx: &SessionContext, context: &Context) 
     df_session_ctx.register_udf(CurrentTenantFunc::new(context.tenant().to_string()));
 }
 
+#[derive(Debug)]
 pub struct CurrentTenantFunc {
     signature: Signature,
     current_tenant: ArrayRef,

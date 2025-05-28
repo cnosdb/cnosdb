@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl, Signature};
-use models::arrow::DataType;
+use models::arrow::{DataType, Field};
 use serde::Deserialize;
 
 use crate::extension::expr::ts_gen_func::utils::{full_signatures, get_arg};
 
+#[derive(Debug)]
 pub struct TimestampRepairFunc {
     signature: Signature,
 }
@@ -34,10 +35,13 @@ impl ScalarUDFImpl for TimestampRepairFunc {
     }
 
     fn return_type(&self, arg_types: &[DataType]) -> DFResult<DataType> {
-        Ok(DataType::List(Arc::new(arg_types[1].clone())))
+        Ok(DataType::List(Arc::new(Field::new_list_field(
+            arg_types[1].clone(),
+            true,
+        ))))
     }
 
-    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
+    fn invoke_with_args(&self, _args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
         Err(DataFusionError::Plan(format!(
             "{} can only be used in the SELECT clause as the top-level expression",
             self.name()

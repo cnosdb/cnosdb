@@ -1,14 +1,8 @@
-use std::sync::Arc;
-
 use datafusion::logical_expr::type_coercion::aggregates::{NUMERICS, TIMESTAMPS};
-use datafusion::logical_expr::{
-    ReturnTypeFunction, ScalarUDF, Signature, TypeSignature, Volatility,
-};
+use datafusion::logical_expr::{Signature, TypeSignature, Volatility};
 use models::arrow::DataType;
 use serde::Deserialize;
 use spi::DFResult;
-
-use crate::extension::expr::scalar_function::unimplemented_scalar_impl;
 
 pub fn full_signatures() -> Signature {
     let mut signatures = Vec::new();

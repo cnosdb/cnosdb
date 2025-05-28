@@ -16,6 +16,7 @@ pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResu
     Ok(udf)
 }
 
+#[derive(Debug)]
 pub struct TopKFunc {
     signature: Signature,
 }

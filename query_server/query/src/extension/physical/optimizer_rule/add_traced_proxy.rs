@@ -9,7 +9,7 @@ use trace::SpanContext;
 
 use crate::extension::physical::plan_node::traced_proxy::TracedProxyExec;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct AddTracedProxy {
     root_span_ctx: Option<SpanContext>,
 }
