@@ -651,10 +651,14 @@ fn encode_series_key_with_prefix(prefix: &str, tab: &str, tags: &[Tag]) -> Vec<u
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
     use std::time::Duration;
 
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
-    use models::schema::external_table_schema::ExternalTableSchema;
+    use models::schema::external_table_schema::{
+        ExternalTableSchema, EXTERNAL_TABLE_OPTION_COMPRESSION,
+        EXTERNAL_TABLE_OPTION_CSV_DELIMITER, EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER,
+    };
     use models::{SeriesId, SeriesKey, Tag};
 
     use super::TSIndex;
@@ -853,13 +857,24 @@ mod test {
             tenant: "cnosdb".into(),
             db: "hello".into(),
             name: "world".into(),
-            file_compression_type: "test".to_string(),
             file_type: "1".to_string(),
             location: "2".to_string(),
+            options: HashMap::from([
+                (
+                    EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER.to_string(),
+                    "true".to_string(),
+                ),
+                (
+                    EXTERNAL_TABLE_OPTION_CSV_DELIMITER.to_string(),
+                    "5".to_string(),
+                ),
+                (
+                    EXTERNAL_TABLE_OPTION_COMPRESSION.to_string(),
+                    "test".to_string(),
+                ),
+            ]),
             target_partitions: 3,
             table_partition_cols: vec![("4".to_string(), DataType::UInt8)],
-            has_header: true,
-            delimiter: 5,
             schema,
         };
 

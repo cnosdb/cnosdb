@@ -8,16 +8,16 @@ use datafusion::sql::TableReference;
 pub trait Resolve {
     fn resolve_object(
         self,
-        default_catalog: Arc<str>,
-        default_schema: Arc<str>,
+        default_catalog: impl Into<Arc<str>>,
+        default_schema: impl Into<Arc<str>>,
     ) -> DFResult<ResolvedTable>;
 }
 
 impl Resolve for TableReference {
     fn resolve_object(
         self,
-        default_catalog: Arc<str>,
-        default_schema: Arc<str>,
+        default_catalog: impl Into<Arc<str>>,
+        default_schema: impl Into<Arc<str>>,
     ) -> DFResult<ResolvedTable> {
         let result = match self {
             Self::Full { .. } => {
@@ -28,13 +28,13 @@ impl Resolve for TableReference {
                 )));
             }
             Self::Partial { schema, table } => ResolvedTable {
-                tenant: default_catalog,
+                tenant: default_catalog.into(),
                 database: schema,
                 table,
             },
             Self::Bare { table } => ResolvedTable {
-                tenant: default_catalog,
-                database: default_schema,
+                tenant: default_catalog.into(),
+                database: default_schema.into(),
                 table,
             },
         };

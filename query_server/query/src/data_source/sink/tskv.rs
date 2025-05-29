@@ -38,13 +38,13 @@ impl RecordBatchSink for TskvRecordBatchSink {
             &self.span,
         );
 
-        let rows_writed = record_batch.num_rows();
+        let rows_wrote = record_batch.num_rows();
 
         let timer = self.metrics.elapsed_record_batch_write().timer();
         let record_batch_size = record_batch.get_array_memory_size() as u64;
 
-        let tenant = self.schema.tenant.as_str();
-        let db_name = self.schema.db.as_str();
+        let tenant = self.schema.tenant.as_ref();
+        let db_name = self.schema.db.as_ref();
         let meta_client = self
             .coord
             .tenant_meta(tenant)
@@ -79,7 +79,7 @@ impl RecordBatchSink for TskvRecordBatchSink {
             )
             .await
             .inspect(|_write_bytes| {
-                span.add_property(|| ("output_rows", rows_writed.to_string()));
+                span.add_property(|| ("output_rows", rows_wrote.to_string()));
             })
             .inspect_err(|err| {
                 span.error(err.to_string());
@@ -87,7 +87,7 @@ impl RecordBatchSink for TskvRecordBatchSink {
             .context(CoordinatorSnafu)?;
         self.coord
             .metrics()
-            .sql_data_in(self.schema.tenant.as_str(), self.schema.db.as_str())
+            .sql_data_in(self.schema.tenant.as_ref(), self.schema.db.as_ref())
             .inc(record_batch_size);
 
         timer.done();
@@ -95,7 +95,7 @@ impl RecordBatchSink for TskvRecordBatchSink {
         // Record the number of `RecordBatch` that has been written
         self.metrics.record_output_batches(1);
 
-        Ok(SinkMetadata::new(rows_writed, write_bytes))
+        Ok(SinkMetadata::new(rows_wrote, write_bytes))
     }
 }
 

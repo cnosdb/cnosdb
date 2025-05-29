@@ -76,7 +76,7 @@ fn get_record_batch_serializer(
         Arc::new(ParquetRecordBatchSerializer {}) as _
     } else if let Some(format) = any.downcast_ref::<CsvFormat>() {
         Arc::new(CsvRecordBatchSerializer::new(
-            format.has_header(),
+            format.has_header().unwrap_or(false),
             format.delimiter(),
         )) as _
     } else if any.is::<JsonFormat>() {
@@ -124,7 +124,7 @@ mod tests {
         let path = Path::from("/data/csv/test.csv");
         let body = Bytes::from_static(b"bytes");
 
-        s3.put(&path, body).await.unwrap();
+        s3.put(&path, body.into()).await.unwrap();
 
         let _ = s3.head(&path).await.unwrap();
     }
@@ -145,7 +145,7 @@ mod tests {
         let path = Path::from("/data/csv/test.csv");
         let body = Bytes::from_static(b"bytes");
 
-        azblob.put(&path, body).await.unwrap();
+        azblob.put(&path, body.into()).await.unwrap();
 
         let _ = azblob.head(&path).await.unwrap();
     }
@@ -184,7 +184,7 @@ mod tests {
         let path = Path::from("/data/csv/test.csv");
         let body = Bytes::from_static(b"bytes");
 
-        gcs.put(&path, body).await.unwrap();
+        gcs.put(&path, body.into()).await.unwrap();
 
         let _ = gcs.head(&path).await.unwrap();
     }

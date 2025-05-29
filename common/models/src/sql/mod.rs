@@ -1,7 +1,6 @@
+use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::str::FromStr as _;
 
-use datafusion::datasource::file_format::file_compression_type::FileCompressionType;
 use datafusion::sql::sqlparser::ast::{escape_double_quote_string, Value as SqlValue};
 
 use crate::arrow::arrow_data_type_to_sql_data_type;
@@ -105,6 +104,16 @@ pub fn write_sql_format_option(
     write!(buf, "{value}").expect("write formatted data to string failed");
     if write_value_with_single_quote {
         buf.push('\'');
+    }
+}
+pub fn write_sql_format_options_map(
+    buf: &mut String,
+    did_write: &mut bool,
+    write_value_with_single_quote: bool,
+    map: &HashMap<String, String>,
+) {
+    for (key, value) in map.iter() {
+        write_sql_format_option(buf, did_write, write_value_with_single_quote, key, value);
     }
 }
 
@@ -347,35 +356,8 @@ impl ToDDLSql for ExternalTableSchema {
         sql.push_str(" options (");
 
         let did_write = &mut false;
-        if file_type == "CSV" {
-            if self.has_header {
-                // CSV option : 'format.has_header' 'true'
-                write_sql_format_option(&mut sql, did_write, true, "format.has_header", true);
-            }
-            // CSV option : 'format.delimiter' ','
-            write_sql_format_option(
-                &mut sql,
-                did_write,
-                true,
-                "format.delimiter",
-                self.delimiter as char,
-            );
-        }
 
-        if file_type == "CSV" || file_type == "JSON" {
-            let compression_type = FileCompressionType::from_str(&self.file_compression_type)
-                .map_err(|e| DumpSnafu { msg: e.to_string() }.build())?;
-            // CSV|JSON option : 'format.compression' 'gzip'
-            if compression_type.is_compressed() {
-                write_sql_format_option(
-                    &mut sql,
-                    did_write,
-                    true,
-                    "format.compression",
-                    compression_type.get_variant(),
-                );
-            }
-        }
+        write_sql_format_options_map(&mut sql, did_write, true, &self.options);
 
         let metadata = self.schema.metadata();
         if !metadata.is_empty() {
@@ -498,7 +480,10 @@ mod test {
 
     use crate::auth::user::{UserDesc, UserOptionsBuilder};
     use crate::schema::database_schema::{DatabaseConfig, DatabaseOptions, DatabaseSchema};
-    use crate::schema::external_table_schema::ExternalTableSchema;
+    use crate::schema::external_table_schema::{
+        ExternalTableSchema, EXTERNAL_TABLE_OPTION_COMPRESSION,
+        EXTERNAL_TABLE_OPTION_CSV_DELIMITER, EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER,
+    };
     use crate::schema::stream_table_schema::{StreamTable, Watermark};
     use crate::schema::tenant::{Tenant, TenantOptionsBuilder};
     use crate::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
@@ -641,13 +626,24 @@ remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
             tenant: "".into(),
             db: "test".into(),
             name: "nation".into(),
-            file_compression_type: "".to_string(),
             file_type: "csv".to_string(),
             location: "query_server/sqllogicaltests/resource/tpch-csv/nation.csv".to_string(),
+            options: HashMap::from([
+                (
+                    EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER.to_string(),
+                    "true".to_string(),
+                ),
+                (
+                    EXTERNAL_TABLE_OPTION_CSV_DELIMITER.to_string(),
+                    ",".to_string(),
+                ),
+                (
+                    EXTERNAL_TABLE_OPTION_COMPRESSION.to_string(),
+                    "".to_string(),
+                ),
+            ]),
             target_partitions: 0,
             table_partition_cols: vec![],
-            has_header: true,
-            delimiter: b',',
             schema: Schema {
                 fields: Fields::from(vec![
                     Field::new("n_nationkey", DataType::UInt64, true),

@@ -81,10 +81,10 @@ async fn create_external_table(
 
     let client = query_state_machine
         .meta
-        .tenant_meta(schema.tenant.as_str())
+        .tenant_meta(schema.tenant.as_ref())
         .await
         .ok_or_else(|| MetaError::TenantNotFound {
-            tenant: schema.tenant.clone(),
+            tenant: schema.tenant.to_string(),
         })
         .context(MetaSnafu)?;
 
@@ -108,16 +108,14 @@ async fn build_table_schema(
     let schema = construct_listing_table_schema(stmt, state).await?;
 
     let schema = ExternalTableSchema {
-        tenant: tenant.to_string(),
-        db: db.to_string(),
-        name: stmt.name.table().to_string(),
-        location: stmt.location.clone(),
+        tenant: tenant.into(),
+        db: db.into(),
+        name: stmt.name.table().into(),
         file_type: stmt.file_type.clone(),
-        file_compression_type: stmt.file_compression_type.to_string(),
+        location: stmt.location.clone(),
+        options: stmt.options.clone(),
         target_partitions: state.config().target_partitions(),
         table_partition_cols: Default::default(),
-        has_header: stmt.has_header,
-        delimiter: stmt.delimiter as u8,
         schema: schema.deref().clone(),
     };
     Ok(schema)
@@ -141,7 +139,7 @@ async fn construct_listing_table_schema(
     };
 
     let table_path = ListingTableUrl::parse(location).context(DatafusionSnafu)?;
-    let options = build_external_table_config(stmt, state.config().target_partitions())?;
+    let options = build_external_table_config(stmt, state)?;
 
     Ok(match provided_schema {
         None => options
@@ -154,16 +152,16 @@ async fn construct_listing_table_schema(
 
 fn build_external_table_config(
     stmt: &CreateExternalTable,
-    session_state: &SessionState,
+    state: &SessionState,
 ) -> QueryResult<ListingOptions> {
     let file_format: Arc<dyn FileFormat> = match stmt.file_type.as_str() {
         "csv" | "parquet" | "avro" | "json" => {
-            let format_factory = session_state
+            let format_factory = state
                 .get_file_format_factory(&stmt.file_type.as_str())
                 .ok_or_else(|| QueryError::Internal {
                     reason: format!("File format '{}' not registered", &stmt.file_type),
                 })?;
-            format_factory.create(&session_state, &stmt.options)?
+            format_factory.create(state, &stmt.options)?
         }
         other => {
             return Err(QueryError::NotImplemented {
@@ -172,8 +170,8 @@ fn build_external_table_config(
         }
     };
 
-    let options = ListingOptions::new(file_format)
-        .with_target_partitions(session_state.config().target_partitions());
+    let options =
+        ListingOptions::new(file_format).with_target_partitions(state.config().target_partitions());
 
     Ok(options)
 }

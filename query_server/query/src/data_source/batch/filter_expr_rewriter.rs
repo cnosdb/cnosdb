@@ -4,12 +4,12 @@ use datafusion::common::tree_node::{
 use datafusion::common::{DFSchemaRef, ScalarValue};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::ExecutionProps;
+use datafusion::logical_expr::utils::conjunction;
 use datafusion::logical_expr::{Expr, Operator};
 use datafusion::optimizer::simplify_expressions::{ExprSimplifier, SimplifyContext};
-use datafusion::physical_expr::utils::conjunction;
 
 pub fn is_udf_function(expr: &Expr) -> bool {
-    matches!(expr, Expr::ScalarUDF(_) | Expr::AggregateUDF(_))
+    matches!(expr, Expr::ScalarFunction(_) | Expr::AggregateFunction(_))
 }
 
 pub fn has_udf_function(expr: &Expr) -> Result<bool, DataFusionError> {
@@ -27,7 +27,7 @@ pub fn rewrite_filters(filters: &[Expr], df_schema: DFSchemaRef) -> Result<Optio
     let expr = conjunction(filters.iter().cloned())
         .map(|e| {
             e.rewrite(&mut filter_expr_rewriter)
-                .and_then(|e| simplifier.simplify(e))
+                .and_then(|e| simplifier.simplify(e.data))
         })
         .transpose()?
         .map(|e| {
@@ -87,25 +87,31 @@ impl TreeNodeRewriter for FilterExprRewriter {
 
                     if matches!(bin.op, Operator::And) {
                         match (left_has_udf, right_has_udf) {
-                            (false, false) => return Ok(node),
+                            (false, false) => return Ok(Transformed::no(node)),
                             (true, true) => {
-                                return Ok(Expr::Literal(ScalarValue::Boolean(Some(true))))
+                                return Ok(Transformed::yes(Expr::Literal(ScalarValue::Boolean(
+                                    Some(true),
+                                ))))
                             }
-                            (true, _) => return Ok(bin.right.as_ref().clone()),
-                            (_, true) => return Ok(bin.left.as_ref().clone()),
+                            (true, _) => return Ok(Transformed::yes(bin.right.as_ref().clone())),
+                            (_, true) => return Ok(Transformed::yes(bin.left.as_ref().clone())),
                         }
                     }
 
                     if matches!(bin.op, Operator::Or) {
                         match (left_has_udf, right_has_udf) {
-                            (false, false) => return Ok(node),
-                            _ => return Ok(Expr::Literal(ScalarValue::Boolean(Some(true)))),
+                            (false, false) => return Ok(Transformed::no(node)),
+                            _ => {
+                                return Ok(Transformed::yes(Expr::Literal(ScalarValue::Boolean(
+                                    Some(true),
+                                ))))
+                            }
                         }
                     }
                 }
-                Ok(node)
+                Ok(Transformed::no(node))
             }
-            _ => Ok(node),
+            _ => Ok(Transformed::no(node)),
         }
     }
 }

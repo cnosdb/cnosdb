@@ -164,3 +164,19 @@ impl TenantOptions {
         Ok(())
     }
 }
+
+impl std::fmt::Display for TenantOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref e) = self.comment {
+            write!(f, "comment={},", e)?;
+        }
+
+        if let Some(ref e) = self.limiter_config {
+            write!(f, "limiter={e:?},")?;
+        } else {
+            write!(f, "limiter=None,")?;
+        }
+
+        Ok(())
+    }
+}

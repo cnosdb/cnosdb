@@ -159,19 +159,6 @@ pub struct UserOptions {
     granted_admin: Option<bool>,
 }
 
-impl UserOptionsBuilder {
-    /// Set `hash_password` from the raw password.
-    pub fn password(
-        &mut self,
-        password: impl Into<String>,
-    ) -> Result<&mut Self, UserOptionsBuilderError> {
-        let hash_password = bcrypt_hash(&password.into())
-            .map_err(|e| UserOptionsBuilderError::from(e.to_string()))?;
-        self.hash_password(hash_password);
-        Ok(self)
-    }
-}
-
 impl UserOptions {
     pub fn hash_password(&self) -> Option<&str> {
         self.hash_password.as_deref()
@@ -276,6 +263,37 @@ impl UserOptions {
         }
 
         Ok(())
+    }
+}
+
+impl std::fmt::Display for UserOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref e) = self.must_change_password {
+            write!(f, "must_change_password={},", e)?;
+        }
+
+        if let Some(ref e) = self.comment {
+            write!(f, "comment={},", e)?;
+        }
+
+        if let Some(ref e) = self.granted_admin {
+            write!(f, "granted_admin={},", e)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl UserOptionsBuilder {
+    /// Set `hash_password` from the raw password.
+    pub fn password(
+        &mut self,
+        password: impl Into<String>,
+    ) -> Result<&mut Self, UserOptionsBuilderError> {
+        let hash_password = bcrypt_hash(&password.into())
+            .map_err(|e| UserOptionsBuilderError::from(e.to_string()))?;
+        self.hash_password(hash_password);
+        Ok(self)
     }
 }
 

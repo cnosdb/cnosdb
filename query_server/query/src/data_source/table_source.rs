@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::sync::Arc;
 use std::write;
@@ -62,7 +63,7 @@ impl TableSourceAdapter {
             TableHandle::TableProvider(t) => {
                 let table_source = provider_as_source(t.clone());
                 if let Some(plan) = table_source.get_logical_plan() {
-                    LogicalPlanBuilder::from(plan.clone()).build()?
+                    LogicalPlanBuilder::from(plan.into_owned()).build()?
                 } else {
                     LogicalPlanBuilder::scan(table_ref, table_source, None)?.build()?
                 }
@@ -129,8 +130,8 @@ impl TableSource for TableSourceAdapter {
     }
 
     /// Called by [`InlineTableScan`]
-    fn get_logical_plan(&self) -> Option<&LogicalPlan> {
-        Some(&self.plan)
+    fn get_logical_plan(&self) -> Option<Cow<LogicalPlan>> {
+        Some(Cow::Borrowed(&self.plan))
     }
 }
 

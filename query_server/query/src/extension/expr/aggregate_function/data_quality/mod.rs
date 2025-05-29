@@ -1,9 +1,8 @@
-use std::sync::Arc;
-
+use datafusion::error::Result as DFResult;
+use datafusion::logical_expr::function::{AccumulatorArgs, StateFieldsArgs};
 use datafusion::logical_expr::type_coercion::aggregates::{NUMERICS, TIMESTAMPS};
 use datafusion::logical_expr::{
-    AccumulatorFactoryFunction, AggregateUDF, ReturnTypeFunction, Signature, StateTypeFunction,
-    TypeSignature, Volatility,
+    Accumulator, AggregateUDFImpl, Signature, TypeSignature, Volatility,
 };
 use models::arrow::{DataType, Field};
 use spi::query::function::FunctionMetadataManager;
@@ -16,40 +15,70 @@ mod accumulator;
 mod common;
 
 pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
-    func_manager.register_udaf(new(DataQualityFunction::Completeness))?;
-    func_manager.register_udaf(new(DataQualityFunction::Consistency))?;
-    func_manager.register_udaf(new(DataQualityFunction::Timeliness))?;
-    func_manager.register_udaf(new(DataQualityFunction::Validity))?;
+    func_manager.register_udaf(DataQualityAggregateUDF::new(
+        DataQualityFunction::Completeness,
+    ))?;
+    func_manager.register_udaf(DataQualityAggregateUDF::new(
+        DataQualityFunction::Consistency,
+    ))?;
+    func_manager.register_udaf(DataQualityAggregateUDF::new(
+        DataQualityFunction::Timeliness,
+    ))?;
+    func_manager.register_udaf(DataQualityAggregateUDF::new(DataQualityFunction::Validity))?;
     Ok(())
 }
 
-fn new(func: DataQualityFunction) -> AggregateUDF {
-    let return_type_func: ReturnTypeFunction = Arc::new(|_| Ok(Arc::new(DataType::Float64)));
+#[derive(Debug)]
+pub struct DataQualityAggregateUDF {
+    data_quality_func: DataQualityFunction,
+    signature: Signature,
+}
 
-    let type_signatures: Vec<_> = NUMERICS
-        .iter()
-        .flat_map(|t| {
-            TIMESTAMPS
-                .iter()
-                .map(|s_t| TypeSignature::Exact(vec![s_t.clone(), t.clone()]))
-        })
-        .collect();
+impl DataQualityAggregateUDF {
+    pub fn new(data_quality_func: DataQualityFunction) -> Self {
+        let type_signatures: Vec<_> = NUMERICS
+            .iter()
+            .flat_map(|t| {
+                TIMESTAMPS
+                    .iter()
+                    .map(|s_t| TypeSignature::Exact(vec![s_t.clone(), t.clone()]))
+            })
+            .collect();
 
-    let state_type_func: StateTypeFunction = Arc::new(move |_, _| {
-        let times = DataType::List(Arc::new(Field::new("item", DataType::Float64, true)));
-        let values = DataType::List(Arc::new(Field::new("item", DataType::Float64, true)));
+        Self {
+            data_quality_func,
+            signature: Signature::one_of(type_signatures, Volatility::Immutable),
+        }
+    }
+}
 
-        Ok(Arc::new(vec![times, values]))
-    });
+impl AggregateUDFImpl for DataQualityAggregateUDF {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 
-    let accumulator: AccumulatorFactoryFunction =
-        Arc::new(move |_, _| Ok(Box::new(DataQualityAccumulator::new(func))));
+    fn name(&self) -> &str {
+        self.data_quality_func.name()
+    }
 
-    AggregateUDF::new(
-        func.name(),
-        &Signature::one_of(type_signatures, Volatility::Immutable),
-        &return_type_func,
-        &accumulator,
-        &state_type_func,
-    )
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, _arg_types: &[DataType]) -> DFResult<DataType> {
+        Ok(DataType::Float64)
+    }
+
+    fn accumulator(&self, acc_args: AccumulatorArgs) -> DFResult<Box<dyn Accumulator>> {
+        Ok(Box::new(DataQualityAccumulator::new(
+            self.data_quality_func,
+        )))
+    }
+
+    fn state_fields(&self, args: StateFieldsArgs) -> DFResult<Vec<Field>> {
+        Ok(vec![
+            Field::new_list_field(DataType::Float64, true), // times
+            Field::new_list_field(DataType::Float64, true), // values
+        ])
+    }
 }

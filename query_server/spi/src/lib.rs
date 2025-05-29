@@ -52,7 +52,7 @@ pub enum QueryError {
     },
 
     #[error_code(code = 9999)]
-    Unimplement {
+    Unimplemented {
         msg: String,
     },
 

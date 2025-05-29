@@ -26,7 +26,7 @@ use crate::data_source::{RecordBatchSink, RecordBatchSinkProvider, SinkMetadata}
 
 pub struct TableWriterExec {
     input: Arc<dyn ExecutionPlan>,
-    table: String,
+    table: Arc<str>,
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
 
@@ -38,7 +38,7 @@ pub struct TableWriterExec {
 impl TableWriterExec {
     pub fn new(
         input: Arc<dyn ExecutionPlan>,
-        table: String,
+        table: impl Into<Arc<str>>,
         record_batch_sink_provider: Arc<dyn RecordBatchSinkProvider>,
     ) -> Self {
         let schema = Arc::new(Schema::new(vec![Field::new(
@@ -49,7 +49,7 @@ impl TableWriterExec {
 
         Self {
             input,
-            table,
+            table: table.into(),
             metrics: ExecutionPlanMetricsSet::new(),
             record_batch_sink_provider,
             schema,

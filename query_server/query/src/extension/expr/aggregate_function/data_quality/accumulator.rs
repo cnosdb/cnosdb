@@ -105,49 +105,44 @@ impl Accumulator for DataQualityAccumulator {
 
     fn state(&mut self) -> DFResult<Vec<ScalarValue>> {
         let series_guard = self.series_guard();
+        let mut left = Vec::with_capacity(series_guard.len());
+        let mut right = Vec::with_capacity(series_guard.len());
+        for x in series_guard.iter() {
+            left.push(ScalarValue::Float64(Some(x.0)));
+            right.push(ScalarValue::Float64(Some(x.1)));
+        }
+        drop(series_guard);
+
         Ok(vec![
-            ScalarValue::List(ScalarValue::new_list_nullable(
-                &series_guard
-                    .iter()
-                    .map(|x| ScalarValue::Float64(Some(x.0)))
-                    .collect(),
-                &DataType::Float64,
-            )),
-            ScalarValue::List(ScalarValue::new_list_nullable(
-                &series_guard
-                    .iter()
-                    .map(|x| ScalarValue::Float64(Some(x.1)))
-                    .collect(),
-                &DataType::Float64,
-            )),
+            ScalarValue::List(ScalarValue::new_list_nullable(&left, &DataType::Float64)),
+            ScalarValue::List(ScalarValue::new_list_nullable(&right, &DataType::Float64)),
         ])
     }
 
     fn merge_batch(&mut self, states: &[ArrayRef]) -> DFResult<()> {
-        let time_lists: &Arc<dyn Array> = &states[0];
-        let value_lists: &Arc<dyn Array> = &states[1];
-        if time_lists.is_empty() {
+        if states[0].is_empty() {
             return Ok(());
         }
 
-        let time_lists = (0..time_lists.len())
-            .map(|index| ScalarValue::try_from_array(time_lists, index))
+        let (time_array, value_array) = (&states[0], &states[1]);
+        let time_lists = (0..time_array.len())
+            .map(|index| ScalarValue::try_from_array(time_array, index))
             .collect::<DFResult<Vec<_>>>()?;
-        let value_lists = (0..time_lists.len())
-            .map(|index| ScalarValue::try_from_array(value_lists, index))
+        let value_lists = (0..time_array.len())
+            .map(|index| ScalarValue::try_from_array(value_array, index))
             .collect::<DFResult<Vec<_>>>()?;
 
         let mut series_guard = self.series_guard();
 
         for (time_list, value_list) in time_lists.into_iter().zip(value_lists.into_iter()) {
             match (time_list, value_list) {
-                (ScalarValue::List(times_list), ScalarValue::List(values_list)) => {
-                    let len = times_list.len().min(values_list.len());
+                (ScalarValue::List(time_list), ScalarValue::List(value_list)) => {
+                    let len = time_list.len().min(value_list.len());
                     let mut series = Vec::with_capacity(len);
                     for i in 0..len {
-                        let tv = ScalarValue::try_from_array(&time_list, i)?;
+                        let tv = ScalarValue::try_from_array(time_list.as_ref(), i)?;
                         let t = scalar_to_f64(&tv);
-                        let vv = ScalarValue::try_from_array(&values_list, i)?;
+                        let vv = ScalarValue::try_from_array(value_list.as_ref(), i)?;
                         let v = scalar_to_f64(&vv);
                         series.push((t, v));
                     }

@@ -33,16 +33,6 @@ use trace::debug;
 
 use super::dialect::CnosDBDialect;
 
-/// For legacy SQL `STORED AS csv WITH HEADER ROW`,
-/// now should be `STORED AS csv OPTIONS ('format.has_header' 'true')`
-pub const EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER: &str = "format.has_header";
-/// For legacy SQL `STORED AS csv WITH DELIMITER ','`,
-/// now should be `STORED AS csv OPTIONS ('format.delimiter' ',')`
-pub const EXTERNAL_TABLE_OPTION_CSV_DELIMITER: &str = "format.delimiter";
-/// For legacy SQL `STORED AS json COMPRESSION TYPE gzip`,
-/// now should be `STORED AS json OPTIONS ('format.compression' 'gzip')`
-pub const EXTERNAL_TABLE_OPTION_COMPRESSION: &str = "format.compression";
-
 // support tag token
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]

@@ -25,10 +25,14 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn new(table_name: Arc<str>, series_id: SeriesId, series_key: SeriesKey) -> Self {
+    pub fn new(
+        table_name: impl Into<Arc<str>>,
+        series_id: SeriesId,
+        series_key: SeriesKey,
+    ) -> Self {
         Self {
             time_range: TimeRange::none(),
-            table_name,
+            table_name: table_name.into(),
             series_id,
             series_key,
             next_column_group_id: 0,

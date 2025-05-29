@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::ops::Deref;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -8,17 +7,17 @@ use datafusion::arrow::array::Int64Array;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::catalog::memory::MemorySourceConfig;
+use datafusion::catalog::Session;
 use datafusion::common::DFSchema;
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::expr::{AggregateFunction, AggregateFunctionParams};
 use datafusion::logical_expr::logical_plan::TableScanAggregate;
-use datafusion::logical_expr::utils::find_exprs_in_exprs;
+use datafusion::logical_expr::utils::{conjunction, find_exprs_in_exprs, split_conjunction};
 use datafusion::logical_expr::{
     Expr, TableProviderAggregationPushDown, TableProviderFilterPushDown,
 };
-use datafusion::physical_expr::utils::{conjunction, split_conjunction};
 use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
@@ -51,10 +50,19 @@ pub struct ClusterTable {
     schema: TskvTableSchemaRef,
 }
 
+impl std::fmt::Debug for ClusterTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClusterTable")
+            .field("_meta", &self._meta)
+            .field("schema", &self.schema)
+            .finish()
+    }
+}
+
 impl ClusterTable {
     async fn create_table_scan_physical_plan(
         &self,
-        ctx: &SessionState,
+        state: &dyn Session,
         projection: Option<&Vec<usize>>,
         predicate: PredicateRef,
     ) -> Result<Arc<dyn ExecutionPlan>> {
@@ -67,7 +75,7 @@ impl ClusterTable {
         // TODO Record the time it takes to get the shards
         let splits = self
             .split_manager
-            .splits(ctx, table_layout)
+            .splits(state, table_layout)
             .await
             .map_err(|err| DataFusionError::External(Box::new(err)))?;
         if splits.is_empty() {
@@ -85,7 +93,7 @@ impl ClusterTable {
 
     async fn create_agg_filter_scan(
         &self,
-        ctx: &SessionState,
+        state: &dyn Session,
         filter: Arc<Predicate>,
         aggregate: &TableScanAggregate,
     ) -> Result<Arc<dyn ExecutionPlan>> {
@@ -94,7 +102,7 @@ impl ClusterTable {
             aggr_expr,
             schema,
         } = aggregate;
-        let proj_schema = SchemaRef::from(schema.deref());
+        let proj_schema = schema.inner().clone();
 
         let table_layout = TableLayoutHandle {
             table: self.schema.clone(),
@@ -103,7 +111,7 @@ impl ClusterTable {
         // TODO Record the time it takes to get the shards
         let splits = self
             .split_manager
-            .splits(ctx, table_layout)
+            .splits(state, table_layout)
             .await
             .map_err(|err| DataFusionError::External(Box::new(err)))?;
 
@@ -129,9 +137,11 @@ impl ClusterTable {
                 let schema = Arc::new(Schema::new(vec![field]));
                 let num_count = Int64Array::from(vec![0]);
                 let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(num_count)])
-                    .map_err(DataFusionError::ArrowError)?;
+                    .map_err(|e| {
+                        DataFusionError::ArrowError(e, Some("create_agg_filter_scan".to_string()))
+                    })?;
                 let mem_exec = MemorySourceConfig::try_new_exec(&[vec![batch]], proj_schema, None)?;
-                return Ok(Arc::new(mem_exec));
+                return Ok(mem_exec);
             } else {
                 return Ok(Arc::new(EmptyExec::new(proj_schema)));
             }
@@ -213,16 +223,20 @@ impl ClusterTable {
 
         let df_schema = self.schema.build_df_schema()?;
 
-        let df_fields = projected_schema
+        let df_fields_qualified = projected_schema
             .fields()
             .iter()
-            .map(|f| df_schema.field_with_unqualified_name(f.name()))
+            .map(|f| {
+                df_schema
+                    .qualified_field_with_unqualified_name(f.name())
+                    .map(|(c, f)| (c.cloned(), Arc::new(f.clone())))
+            })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
-            .cloned()
             .collect::<Vec<_>>();
 
-        let df_schema = DFSchema::new_with_metadata(df_fields, df_schema.metadata().clone())?;
+        let df_schema =
+            DFSchema::new_with_metadata(df_fields_qualified, df_schema.metadata().clone())?;
 
         // Generate physical expressions using projected schema
         let predicate = Arc::new(
@@ -295,7 +309,7 @@ impl TableProvider for ClusterTable {
 
     async fn scan(
         &self,
-        ctx: &SessionState,
+        state: &dyn Session,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
         aggregate: Option<&TableScanAggregate>,
@@ -306,23 +320,23 @@ impl TableProvider for ClusterTable {
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let df_schema = self.schema.build_df_schema()?;
-        let arrow_schema = self.schema.build_arrow_schema();
         // projection schema
-        let (df_schema, arrow_schema) = if let Some(p) = projection {
-            let df_fields = p
+        let df_schema = if let Some(p) = projection {
+            let df_fields_qualified = p
                 .iter()
                 .cloned()
-                .map(|i| df_schema.fields()[i].clone())
+                .map(|i| {
+                    let (c, f) = df_schema.qualified_field(i);
+                    (c.cloned(), Arc::new(f.clone()))
+                })
                 .collect::<Vec<_>>();
-            let arrow_schema = arrow_schema.project(p)?;
             let df_schema = Arc::new(DFSchema::new_with_metadata(
-                df_fields,
+                df_fields_qualified,
                 df_schema.metadata().clone(),
             )?);
-            let arrow_schema = Arc::new(arrow_schema);
-            (df_schema, arrow_schema)
+            df_schema
         } else {
-            (df_schema, arrow_schema)
+            df_schema
         };
 
         let filters = rewrite_filters(filters, df_schema.clone())?;
@@ -334,11 +348,11 @@ impl TableProvider for ClusterTable {
 
         if let Some(aggregate) = aggregate {
             debug!("Create aggregate filter tskv scan.");
-            return self.create_agg_filter_scan(ctx, filter, aggregate).await;
+            return self.create_agg_filter_scan(state, filter, aggregate).await;
         }
 
         return self
-            .create_table_scan_physical_plan(ctx, projection, filter)
+            .create_table_scan_physical_plan(state, projection, filter)
             .await;
     }
 
@@ -355,8 +369,7 @@ impl TableProvider for ClusterTable {
                     // FIXME: tag support Exact Filter PushDown
                     // TODO: REMOVE
                     let exprs = split_conjunction(f);
-                    let exprs = exprs.into_iter().cloned().collect::<Vec<_>>();
-                    if find_exprs_in_exprs(&exprs, &|nested_expr| {
+                    if find_exprs_in_exprs(exprs, &|nested_expr| {
                         !expr_utils::can_exact_filter(nested_expr, self.table_schema())
                     })
                     .is_empty()

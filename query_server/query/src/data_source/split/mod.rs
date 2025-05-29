@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use coordinator::service::CoordinatorRef;
-use datafusion::execution::context::SessionState;
+use datafusion::catalog::Session;
 use datafusion::sql::TableReference;
 use models::object_reference::Resolve;
 use models::predicate::PlacedSplit;
@@ -33,15 +33,15 @@ impl SplitManager {
 
     pub async fn splits(
         &self,
-        _ctx: &SessionState,
+        _state: &dyn Session,
         table_layout: TableLayoutHandle,
     ) -> QueryResult<Vec<PlacedSplit>> {
         let TableLayoutHandle {
             table, predicate, ..
         } = table_layout;
 
-        let table_name =
-            TableReference::bare(&table.name).resolve_object(&table.tenant, &table.db)?;
+        let table_name = TableReference::bare(table.name.clone())
+            .resolve_object(table.tenant.clone(), table.db.clone())?;
         debug!(
             "Get table {}'s splits, predicate: {:?}",
             table.name, predicate
