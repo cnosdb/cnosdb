@@ -14,6 +14,10 @@ use datafusion::sql::sqlparser::parser::{IsOptional, Parser, ParserError};
 use datafusion::sql::sqlparser::tokenizer::{Token, TokenWithSpan, Tokenizer};
 use models::codec::Encoding;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
+use models::schema::external_table_schema::{
+    EXTERNAL_TABLE_OPTION_COMPRESSION, EXTERNAL_TABLE_OPTION_CSV_DELIMITER,
+    EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER,
+};
 use serde_json::Value as JsonValue;
 use snafu::ResultExt;
 use spi::query::ast::{
@@ -945,7 +949,7 @@ impl<'a> ExtParser<'a> {
                     && self.delimiter.is_none()
                     && self.file_compression_type.is_none()
                 {
-                    return;
+                    return self;
                 }
                 let (mut options, new_options) = match self.options {
                     Some(opt) => (opt, false),
@@ -966,6 +970,11 @@ impl<'a> ExtParser<'a> {
                             delimiter.to_string(),
                         );
                     }
+                } else {
+                    options.insert(
+                        EXTERNAL_TABLE_OPTION_CSV_DELIMITER.to_string(),
+                        ','.to_string(),
+                    );
                 }
                 if let Some(compression) = self.file_compression_type {
                     if new_options || !options.contains_key(EXTERNAL_TABLE_OPTION_COMPRESSION) {
@@ -974,6 +983,11 @@ impl<'a> ExtParser<'a> {
                             compression.to_string(),
                         );
                     }
+                } else {
+                    options.insert(
+                        EXTERNAL_TABLE_OPTION_COMPRESSION.to_string(),
+                        CompressionTypeVariant::UNCOMPRESSED.to_string(),
+                    );
                 }
                 self.options = Some(options);
                 self
@@ -1068,12 +1082,8 @@ impl<'a> ExtParser<'a> {
 
         builder = builder.rewrite_options();
 
-        let delimiter = builder.delimiter.unwrap_or(',');
-        let file_compression_type = builder
-            .file_compression_type
-            .unwrap_or(CompressionTypeVariant::UNCOMPRESSED);
         let create = CreateExternalTable {
-            name: table_name.to_string(),
+            name: table_name,
             columns,
             file_type: builder.file_type.unwrap(),
             location: builder.location.unwrap(),
@@ -1082,7 +1092,14 @@ impl<'a> ExtParser<'a> {
             if_not_exists,
             temporary: false,
             unbounded,
-            options: builder.options,
+            options: builder
+                .options
+                .map(|m| {
+                    m.into_iter()
+                        .map(|(k, v)| (k, SqlValue::SingleQuotedString(v)))
+                        .collect()
+                })
+                .unwrap_or_default(),
             constraints: vec![],
         };
         Ok(ExtStatement::CreateExternalTable(create))
@@ -1233,7 +1250,7 @@ impl<'a> ExtParser<'a> {
 
     fn parse_string_value(&mut self) -> Result<String> {
         let value = self.parser.parse_value()?;
-        parse_string_value(value)
+        parse_string_value(value.value)
     }
 
     fn parse_create_database(&mut self) -> Result<ExtStatement> {
@@ -1241,7 +1258,7 @@ impl<'a> ExtParser<'a> {
             self.parser
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let database_name = self.parser.parse_identifier()?;
-        let name_vec = ObjectName(vec![database_name.clone()]);
+        let name_vec = ObjectName::from(vec![database_name.clone()]);
         check_name_not_contain_illegal_character(&name_vec)?;
         let (options, config) = self.parse_database_options_and_config()?;
         Ok(ExtStatement::CreateDatabase(
@@ -1320,7 +1337,7 @@ impl<'a> ExtParser<'a> {
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
 
         let name = self.parser.parse_identifier()?;
-        let name_vec = ObjectName(vec![name.clone()]);
+        let name_vec = ObjectName::from(vec![name.clone()]);
         check_name_not_contain_illegal_character(&name_vec)?;
 
         let with_options = if self.parser.parse_keyword(Keyword::WITH) {
@@ -1343,7 +1360,7 @@ impl<'a> ExtParser<'a> {
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
 
         let name = self.parser.parse_identifier()?;
-        let name_vec = ObjectName(vec![name.clone()]);
+        let name_vec = ObjectName::from(vec![name.clone()]);
         check_name_not_contain_illegal_character(&name_vec)?;
 
         let inherit = if self.parse_cnos_keyword(CnosKeyWord::INHERIT) {
@@ -1365,7 +1382,7 @@ impl<'a> ExtParser<'a> {
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
 
         let name = self.parser.parse_identifier()?;
-        let name_vec = ObjectName(vec![name.clone()]);
+        let name_vec = ObjectName::from(vec![name.clone()]);
         check_name_not_contain_illegal_character(&name_vec)?;
 
         let with_options = if self.parser.parse_keyword(Keyword::WITH) {
@@ -1518,7 +1535,7 @@ impl<'a> ExtParser<'a> {
 
             let val = self.parser.parse_value()?;
             // 检查值是否为非负数
-            if let SqlValue::Number(num, _) = &val {
+            if let SqlValue::Number(num, _) = &val.value {
                 let parsed_num = num
                     .parse::<f64>()
                     .map_err(|_| ParserError::ParserError(key.value.clone()))?;
@@ -1531,7 +1548,7 @@ impl<'a> ExtParser<'a> {
             }
             map.insert(
                 key.value.to_lowercase(),
-                ExtParser::sql_value_to_json_value(val)?,
+                ExtParser::sql_value_to_json_value(val.value)?,
             );
 
             // 这里不再检查逗号，直接继续下一个键值对，直到没有更多键值对
@@ -1570,7 +1587,7 @@ impl<'a> ExtParser<'a> {
             }
             let val = self.parser.parse_value()?;
             // 检查值是否为非负数
-            if let SqlValue::Number(num, _) = &val {
+            if let SqlValue::Number(num, _) = &val.value {
                 let parsed_num = num
                     .parse::<f64>()
                     .map_err(|_| ParserError::ParserError(key.value.clone()))?;
@@ -1581,7 +1598,7 @@ impl<'a> ExtParser<'a> {
                     )));
                 }
             }
-            let json_val = ExtParser::sql_value_to_json_value(val)?;
+            let json_val = ExtParser::sql_value_to_json_value(val.value)?;
 
             // 将键值对添加到相应的桶中
             if key_str.starts_with("remote") {
@@ -1798,7 +1815,7 @@ impl<'a> ExtParser<'a> {
         self.parser.expect_keyword(Keyword::FROM)?;
 
         let from = if self.parser.consume_token(&Token::LParen) {
-            let subquery = Box::new(self.parser.parse_query()?);
+            let subquery = self.parser.parse_query()?;
             self.parser.expect_token(&Token::RParen)?;
 
             TableFactor::Derived {
@@ -2184,7 +2201,7 @@ impl<'a> ExtParser<'a> {
                     let column_options = idents.into_iter().map(|i| ColumnOption {
                         name: i,
                         is_tag: true,
-                        data_type: DataType::String,
+                        data_type: DataType::String(None),
                         encoding: None,
                     });
                     all_columns.extend(column_options);
@@ -2230,18 +2247,15 @@ impl<'a> ExtParser<'a> {
         let name = parser.parse_identifier()?;
         let _ = parser.expect_token(&Token::Eq);
         let value = parser.parse_value()?;
-        Ok(SqlOption { name, value })
+        Ok(SqlOption {
+            name,
+            value: value.value,
+        })
     }
 }
 
 fn check_name_not_contain_illegal_character(object_name: &ObjectName) -> Result<(), ParserError> {
-    let names: Vec<String> = object_name
-        .0
-        .iter()
-        .map(|ident| ident.value.clone())
-        .collect();
-
-    let name_str = names.join(".");
+    let name_str = object_name.to_string();
 
     // 检查组合后的字符串是否包含 '/'
     if name_str.contains('/') {
@@ -2268,10 +2282,10 @@ fn parse_file_type(s: &str) -> Result<String, ParserError> {
 mod tests {
     use std::ops::Deref;
 
-    use datafusion::prelude::Expr;
     use datafusion::sql::sqlparser::ast::{
-        ColumnDef, CreateTable as SqlCreateTable, DataType as SqlDataType, Ident,
-        Insert as SqlInsert, ObjectName, SetExpr, Statement as SqlStatement, TableFactor,
+        AssignmentTarget, ColumnDef, CreateTable as SqlCreateTable, DataType as SqlDataType,
+        ExactNumberInfo, Expr, Ident, Insert as SqlInsert, ObjectName, SetExpr,
+        SqlOption as SqlSqlOption, Statement as SqlStatement, TableFactor, TableObject,
         TimezoneInfo, Value as SqlValue,
     };
     use datafusion::sql::sqlparser::tokenizer::Span as SqlSpan;
@@ -2516,7 +2530,7 @@ mod tests {
         assert_eq!(
             statement1,
             ExtStatement::CreateTable(CreateTable {
-                name: ObjectName(vec!["test".into()]),
+                name: ObjectName::from(vec!["test".into()]),
                 if_not_exists: false,
                 columns: vec![ColumnOption {
                     name: "column1".into(),
@@ -2557,13 +2571,13 @@ mod tests {
                         ColumnOption {
                             name: Ident::from("column6"),
                             is_tag: true,
-                            data_type: SqlDataType::String,
+                            data_type: SqlDataType::String(None),
                             encoding: None
                         },
                         ColumnOption {
                             name: Ident::from("column7"),
                             is_tag: true,
-                            data_type: SqlDataType::String,
+                            data_type: SqlDataType::String(None),
                             encoding: None
                         },
                         ColumnOption {
@@ -2575,13 +2589,13 @@ mod tests {
                         ColumnOption {
                             name: Ident::from("column2"),
                             is_tag: false,
-                            data_type: SqlDataType::String,
+                            data_type: SqlDataType::String(None),
                             encoding: Some(Encoding::Gzip)
                         },
                         ColumnOption {
                             name: Ident::from("column3"),
                             is_tag: false,
-                            data_type: SqlDataType::UnsignedBigInt(None),
+                            data_type: SqlDataType::BigIntUnsigned(None),
                             encoding: Some(Encoding::Null)
                         },
                         ColumnOption {
@@ -2593,7 +2607,7 @@ mod tests {
                         ColumnOption {
                             name: Ident::from("column5"),
                             is_tag: false,
-                            data_type: SqlDataType::Double,
+                            data_type: SqlDataType::Double(ExactNumberInfo::None),
                             encoding: Some(Encoding::Gorilla)
                         }
                     ]
@@ -2619,7 +2633,7 @@ mod tests {
                     source: _,
                     ..
                 }) => {
-                    let expect_table_name = &ObjectName(vec![
+                    let expect_table_name = TableObject::TableName(ObjectName::from(vec![
                         Ident {
                             value: "public".to_string(),
                             quote_style: None,
@@ -2630,9 +2644,9 @@ mod tests {
                             quote_style: None,
                             span: SqlSpan::empty(),
                         },
-                    ]);
+                    ]));
 
-                    let expect_column_names = &vec![
+                    let expect_column_names = vec![
                         Ident {
                             value: "TIME".to_string(),
                             quote_style: None,
@@ -2660,8 +2674,8 @@ mod tests {
                         },
                     ];
 
-                    assert_eq!(sql_table_name, expect_table_name);
-                    assert_eq!(sql_column_names, expect_column_names);
+                    assert_eq!(sql_table_name, &expect_table_name);
+                    assert_eq!(sql_column_names, &expect_column_names);
                 }
                 _ => panic!("failed"),
             },
@@ -2687,7 +2701,7 @@ mod tests {
                     source,
                     ..
                 }) => {
-                    let expect_table_name = &ObjectName(vec![
+                    let expect_table_name = TableObject::TableName(ObjectName::from(vec![
                         Ident {
                             value: "public".to_string(),
                             quote_style: None,
@@ -2698,9 +2712,9 @@ mod tests {
                             quote_style: None,
                             span: SqlSpan::empty(),
                         },
-                    ]);
+                    ]));
 
-                    let expect_column_names = &vec![
+                    let expect_column_names = vec![
                         Ident {
                             value: "TIME".to_string(),
                             quote_style: None,
@@ -2728,10 +2742,10 @@ mod tests {
                         },
                     ];
 
-                    assert_eq!(sql_table_name, expect_table_name);
-                    assert_eq!(sql_column_names, expect_column_names);
+                    assert_eq!(sql_table_name, &expect_table_name);
+                    assert_eq!(sql_column_names, &expect_column_names);
 
-                    match source.deref().body.deref() {
+                    match source.as_ref().unwrap().body.as_ref() {
                         SetExpr::Select(_) => {}
                         _ => panic!("failed"),
                     }
@@ -2842,18 +2856,18 @@ mod tests {
             statement,
             vec![
                 AlterTable {
-                    table_name: ObjectName(vec![Ident::from("m")]),
+                    table_name: ObjectName::from(vec![Ident::from("m")]),
                     alter_action: AlterTableAction::AddColumn {
                         column: ColumnOption {
                             name: Ident::from("t"),
                             is_tag: true,
-                            data_type: SqlDataType::String,
+                            data_type: SqlDataType::String(None),
                             encoding: None
                         }
                     }
                 },
                 AlterTable {
-                    table_name: ObjectName(vec![Ident::from("m")]),
+                    table_name: ObjectName::from(vec![Ident::from("m")]),
                     alter_action: AlterTableAction::AddColumn {
                         column: ColumnOption {
                             name: Ident::from("f"),
@@ -2864,26 +2878,26 @@ mod tests {
                     }
                 },
                 AlterTable {
-                    table_name: ObjectName(vec![Ident::from("m")]),
+                    table_name: ObjectName::from(vec![Ident::from("m")]),
                     alter_action: AlterTableAction::DropColumn {
                         column_name: Ident::from("t")
                     }
                 },
                 AlterTable {
-                    table_name: ObjectName(vec![Ident::from("m")]),
+                    table_name: ObjectName::from(vec![Ident::from("m")]),
                     alter_action: AlterTableAction::DropColumn {
                         column_name: Ident::from("f")
                     }
                 },
                 AlterTable {
-                    table_name: ObjectName(vec![Ident::from("m")]),
+                    table_name: ObjectName::from(vec![Ident::from("m")]),
                     alter_action: AlterTableAction::AlterColumnEncoding {
                         column_name: Ident::from("f"),
                         encoding: Encoding::Default
                     }
                 },
                 AlterTable {
-                    table_name: ObjectName(vec![Ident::from("m")]),
+                    table_name: ObjectName::from(vec![Ident::from("m")]),
                     alter_action: AlterTableAction::AlterColumnEncoding {
                         column_name: Ident::from("TIME"),
                         encoding: Encoding::Null
@@ -2909,7 +2923,7 @@ mod tests {
                 path: "s3://bucket/path".to_string(),
                 connection_options: vec![],
             },
-            table_name: ObjectName(vec!["mytable".into()]),
+            table_name: ObjectName::from(vec!["mytable".into()]),
             columns: vec![],
         });
 
@@ -3044,7 +3058,7 @@ mod tests {
 
         let copy_target = ast::CopyTarget::IntoLocation(CopyIntoLocation {
             from: TableFactor::Table {
-                name: ObjectName(vec!["mytable".into()]),
+                name: ObjectName::from(vec!["mytable".into()]),
                 alias: None,
                 args: None,
                 with_hints: vec![],
@@ -3170,30 +3184,36 @@ mod tests {
                 {
                     let columns_expected = vec![
                         make_column_def("time", SqlDataType::Timestamp(None, TimezoneInfo::None)),
-                        make_column_def("name", SqlDataType::String),
-                        make_column_def("driver", SqlDataType::String),
-                        make_column_def("load_capacity", SqlDataType::Double),
+                        make_column_def("name", SqlDataType::String(None)),
+                        make_column_def("driver", SqlDataType::String(None)),
+                        make_column_def(
+                            "load_capacity",
+                            SqlDataType::Double(ExactNumberInfo::None),
+                        ),
                     ];
-                    let with_options_expected = vec![
+                    let with_options_expected: Vec<SqlSqlOption> = vec![
                         SqlOption {
                             name: "db".into(),
                             value: SqlValue::SingleQuotedString("public".into()),
-                        },
+                        }
+                        .into(),
                         SqlOption {
                             name: "table".into(),
                             value: SqlValue::SingleQuotedString("readings_kv".into()),
-                        },
+                        }
+                        .into(),
                         SqlOption {
                             name: "event_time_column".into(),
                             value: SqlValue::SingleQuotedString("time".into()),
-                        },
+                        }
+                        .into(),
                     ];
 
                     assert!(!if_not_exists);
                     assert_eq!("TskvTable", &name.to_string());
                     assert_eq!(columns_expected, columns);
                     assert_eq!(with_options_expected, with_options);
-                    assert_eq!(Some("tskv".into()), engine);
+                    assert_eq!(Some("tskv".to_string()), engine.map(|e| e.to_string()));
 
                     return;
                 }
@@ -3240,9 +3260,12 @@ mod tests {
                 } => {
                     assert_eq!("TskvTable", &table.to_string());
                     assert_eq!(1, assignments.len());
-                    assert_eq!(Ident::from("tag1"), assignments[0].id[0]);
                     assert_eq!(
-                        Expr::Value(SqlValue::SingleQuotedString("1".into())),
+                        AssignmentTarget::ColumnName(ObjectName::from(vec![Ident::from("tag1")])),
+                        assignments[0].target,
+                    );
+                    assert_eq!(
+                        Expr::Value(SqlValue::SingleQuotedString("1".to_string()).into()),
                         assignments[0].value
                     );
                     assert!(from.is_none());

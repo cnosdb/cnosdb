@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use datafusion::execution::SessionStateBuilder;
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_optimizer::aggregate_statistics::AggregateStatistics;
 use datafusion::physical_optimizer::coalesce_batches::CoalesceBatches;
@@ -117,10 +118,9 @@ impl PhysicalPlanner for DefaultPhysicalPlanner {
         session: &SessionCtx,
     ) -> QueryResult<Arc<dyn ExecutionPlan>> {
         // 将扩展的物理计划优化规则注入df 的 session state
-        let new_state = session
-            .inner()
-            .clone()
-            .with_physical_optimizer_rules(self.ext_physical_optimizer_rules.clone());
+        let new_state = SessionStateBuilder::new_from_existing(session.inner().clone())
+            .with_physical_optimizer_rules(self.ext_physical_optimizer_rules.clone())
+            .build();
 
         // 通过扩展的物理计划转换规则构造df 的 Physical Planner
         let planner = DFDefaultPhysicalPlanner::with_extension_planners(
@@ -145,7 +145,7 @@ impl PhysicalOptimizer for DefaultPhysicalPlanner {
         plan: Arc<dyn ExecutionPlan>,
         _session: &SessionCtx,
     ) -> QueryResult<Arc<dyn ExecutionPlan>> {
-        let partition_count = plan.output_partitioning().partition_count();
+        let partition_count = plan.properties().output_partitioning().partition_count();
 
         let merged_plan = if partition_count > 1 {
             Arc::new(CoalescePartitionsExec::new(plan))
@@ -153,7 +153,13 @@ impl PhysicalOptimizer for DefaultPhysicalPlanner {
             plan
         };
 
-        debug_assert_eq!(1, merged_plan.output_partitioning().partition_count());
+        debug_assert_eq!(
+            1,
+            merged_plan
+                .properties()
+                .output_partitioning()
+                .partition_count()
+        );
 
         Ok(merged_plan)
     }

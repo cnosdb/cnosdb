@@ -46,7 +46,7 @@ impl Default for DefaultAnalyzer {
 }
 
 impl Analyzer for DefaultAnalyzer {
-    fn analyze(&self, plan: &LogicalPlan, session: &SessionCtx) -> QueryResult<LogicalPlan> {
+    fn analyze(&self, plan: LogicalPlan, session: &SessionCtx) -> QueryResult<LogicalPlan> {
         let plan =
             self.inner
                 .execute_and_check(plan, session.inner().config_options(), |_, _| {})?;

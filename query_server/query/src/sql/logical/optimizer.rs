@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use datafusion::execution::context::ExecutionProps;
-use datafusion::logical_expr::simplify::SimplifyContext;
+use datafusion::execution::SessionStateBuilder;
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::optimizer::common_subexpr_eliminate::CommonSubexprEliminate;
 use datafusion::optimizer::decorrelate_predicate_subquery::DecorrelatePredicateSubquery;
@@ -19,7 +18,7 @@ use datafusion::optimizer::push_down_filter::PushDownFilter;
 use datafusion::optimizer::push_down_limit::PushDownLimit;
 use datafusion::optimizer::replace_distinct_aggregate::ReplaceDistinctWithAggregate;
 use datafusion::optimizer::scalar_subquery_to_join::ScalarSubqueryToJoin;
-use datafusion::optimizer::simplify_expressions::{ExprSimplifier, SimplifyExpressions};
+use datafusion::optimizer::simplify_expressions::SimplifyExpressions;
 use datafusion::optimizer::single_distinct_to_groupby::SingleDistinctToGroupBy;
 use datafusion::optimizer::OptimizerRule;
 use spi::query::analyzer::AnalyzerRef;
@@ -63,11 +62,8 @@ impl Default for DefaultLogicalOptimizer {
         // additional optimizer rule
         let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = vec![
             // df default rules start
-            Arc::new(SimplifyExpressions::new()),
             // TODO(zipper): Does this rule can do unwrap_cast_in_comparison?
-            Arc::new(ExprSimplifier::new(SimplifyContext::new(
-                &ExecutionProps::default(),
-            ))),
+            Arc::new(SimplifyExpressions::new()),
             Arc::new(ReplaceDistinctWithAggregate::new()),
             Arc::new(EliminateJoin::new()),
             Arc::new(DecorrelatePredicateSubquery::new()),
@@ -112,7 +108,7 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
             let mut span = session.get_child_span("analyze plan");
 
             self.analyzer
-                .analyze(&plan.df_plan, session)
+                .analyze(plan.df_plan.clone(), session)
                 .inspect(|p| {
                     span.ok("analyzer");
                     span.add_property(|| {
@@ -135,18 +131,17 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
         let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = if plan.is_tag_scan {
             let mut rules = self.rules.clone();
             rules[OPTIMIZE_PROJECTIONS_INDEX] =
-                Arc::new(OptimizeProjections::new(plan.is_tag_scan));
+                Arc::new(OptimizeProjections::with_tag_scan(plan.is_tag_scan));
             rules
         } else {
             self.rules.clone()
         };
 
-        let optimizeed_plan = {
+        let optimized_plan = {
             let mut span = session.get_child_span("optimize logical plan");
-            session
-                .inner()
-                .clone()
+            SessionStateBuilder::new_from_existing(session.inner().clone())
                 .with_optimizer_rules(rules)
+                .build()
                 .optimize(&analyzed_plan)
                 .inspect(|p| {
                     span.ok("optimize");
@@ -162,7 +157,7 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
                 })?
         };
 
-        Ok(optimizeed_plan)
+        Ok(optimized_plan)
     }
 
     fn inject_optimizer_rule(&mut self, optimizer_rule: Arc<dyn OptimizerRule + Send + Sync>) {

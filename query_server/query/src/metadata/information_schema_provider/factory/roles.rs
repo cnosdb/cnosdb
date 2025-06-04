@@ -5,9 +5,9 @@ use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::catalog::memory::MemorySourceConfig;
+use datafusion::catalog::Session;
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::datasource::{TableProvider, TableType};
-use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::Expr;
@@ -44,6 +44,7 @@ impl InformationSchemaTableFactory for RolesFactory {
     }
 }
 
+#[derive(Debug)]
 pub struct InformationRolesTable {
     user: User,
     metadata: MetaClientRef,
@@ -72,7 +73,7 @@ impl TableProvider for InformationRolesTable {
 
     async fn scan(
         &self,
-        _state: &SessionState,
+        _state: &dyn Session,
         projection: Option<&Vec<usize>>,
         _filters: &[Expr],
         _aggregate: Option<&TableScanAggregate>,
@@ -104,6 +105,6 @@ impl TableProvider for InformationRolesTable {
 
         let mem_exec =
             MemorySourceConfig::try_new_exec(&[vec![rb]], self.schema(), projection.cloned())?;
-        Ok(Arc::new(mem_exec))
+        Ok(mem_exec)
     }
 }

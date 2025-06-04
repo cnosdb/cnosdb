@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use datafusion::common::tree_node::{TreeNode, TreeNodeRewriter};
+use datafusion::common::tree_node::{
+    Transformed, TransformedResult, TreeNode, TreeNodeRecursion, TreeNodeRewriter,
+};
 use datafusion::common::Result as DFResult;
 use datafusion::config::ConfigOptions;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
@@ -27,7 +29,7 @@ impl PhysicalOptimizerRule for AddTracedProxy {
         _config: &ConfigOptions,
     ) -> DFResult<Arc<dyn ExecutionPlan>> {
         if self.root_span_ctx.is_some() {
-            return plan.rewrite_down(&mut AddTracedProxyRewriter);
+            return AddTracedProxyRewriter.rewrite_down(plan).data();
         }
 
         Ok(plan)
@@ -45,9 +47,33 @@ impl PhysicalOptimizerRule for AddTracedProxy {
 struct AddTracedProxyRewriter;
 
 impl TreeNodeRewriter for AddTracedProxyRewriter {
-    type N = Arc<dyn ExecutionPlan>;
+    type Node = Arc<dyn ExecutionPlan>;
 
-    fn mutate(&mut self, plan: Self::N) -> DFResult<Self::N> {
-        Ok(Arc::new(TracedProxyExec::new(plan)))
+    fn f_up(&mut self, plan: Self::Node) -> DFResult<Transformed<Self::Node>> {
+        Ok(Transformed::yes(Arc::new(TracedProxyExec::new(plan))))
+    }
+}
+
+impl AddTracedProxyRewriter {
+    fn rewrite_down(
+        &mut self,
+        plan: Arc<dyn ExecutionPlan>,
+    ) -> DFResult<Transformed<Arc<dyn ExecutionPlan>>> {
+        let down = self.f_down(plan)?;
+        if down.transformed {
+            return self.f_up(plan);
+        }
+        let need_mutate = match down.tnr {
+            TreeNodeRecursion::Stop => return Ok(down),
+            TreeNodeRecursion::Continue => true,
+            TreeNodeRecursion::Jump => false,
+        };
+
+        if need_mutate {
+            let up = self.f_up(down.data)?;
+            up.data.map_children(|node| self.rewrite_down(node))
+        } else {
+            Ok(down)
+        }
     }
 }

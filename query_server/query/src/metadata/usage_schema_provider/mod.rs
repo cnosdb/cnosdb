@@ -109,7 +109,7 @@ pub fn create_usage_schema_view_table(
 
     let logical_plan = builder.build()?;
 
-    Ok(Arc::new(ViewTable::try_new(logical_plan, None)?))
+    Ok(Arc::new(ViewTable::new(logical_plan, None)))
 }
 
 #[macro_export]

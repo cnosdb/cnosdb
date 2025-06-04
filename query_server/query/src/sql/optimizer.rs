@@ -179,7 +179,7 @@ mod test {
 
     fn observe(_plan: &LogicalPlan, _rule: &dyn OptimizerRule) {}
 
-    fn optimize_plan(plan: &LogicalPlan) -> Result<LogicalPlan> {
+    fn optimize_plan(plan: LogicalPlan) -> Result<LogicalPlan> {
         let opt = Optimizer::new();
         let config = OptimizerContext::new().with_skip_failing_rules(false);
 
@@ -202,7 +202,7 @@ mod test {
             "value".to_string(),
             ColumnType::Field(ValueType::Integer),
         ));
-        schema.db = dn_name.to_string();
+        schema.db = dn_name.into();
 
         let provider = Arc::new(ClusterTable::new(
             Arc::new(MockCoordinator::default()),
@@ -219,7 +219,7 @@ mod test {
         opt_logical_plan_str: &str,
         final_physical_plan_str: &str,
     ) -> Result<()> {
-        let opt_plan = optimize_plan(&plan)?;
+        let opt_plan = optimize_plan(plan)?;
         let result_str = format!("{opt_plan:?}");
 
         assert_eq!(opt_logical_plan_str, result_str);

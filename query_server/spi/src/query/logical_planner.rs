@@ -17,7 +17,10 @@ use datafusion::logical_expr::{
     ScalarUDFImpl, Signature, Volatility,
 };
 use datafusion::prelude::{col, Expr};
-use datafusion::sql::sqlparser::ast::{Ident, ObjectName, ObjectNamePart, Value as SqlValue};
+use datafusion::sql::sqlparser::ast::{
+    Expr as SqlExpr, Ident, ObjectName, ObjectNamePart, SqlOption as SqlSqlOption,
+    Value as SqlValue, ValueWithSpan,
+};
 use datafusion::sql::sqlparser::parser::ParserError;
 use lazy_static::lazy_static;
 use models::auth::privilege::{DatabasePrivilege, GlobalPrivilege, Privilege};
@@ -1020,15 +1023,45 @@ fn write_tmp_service_account_file(
     Ok(())
 }
 
+/// Convert value to lowercase.
+pub fn sql_value_to_string(value: &SqlValue) -> String {
+    match value {
+        SqlValue::SingleQuotedString(s) | SqlValue::DoubleQuotedString(s) => s.clone(),
+        _ => value.to_string().to_ascii_lowercase(),
+    }
+}
+
+/// Convert value to lowercase.
+pub fn sql_value_into_string(value: SqlValue) -> String {
+    match value {
+        SqlValue::SingleQuotedString(s) | SqlValue::DoubleQuotedString(s) => s,
+        _ => value.to_string().to_ascii_lowercase(),
+    }
+}
+
+/// Convert SqlOption s to map, and convert value to lowercase
+pub fn sql_parser_sql_options_to_map(opts: &[SqlSqlOption]) -> HashMap<String, String> {
+    let mut map = HashMap::with_capacity(opts.len());
+    for opt in opts {
+        match opt {
+            SqlSqlOption::KeyValue { key, value } => {
+                let value_str = match value {
+                    SqlExpr::Value(ValueWithSpan { value, .. }) => sql_value_to_string(value),
+                    other => other.to_string().to_ascii_lowercase(),
+                };
+                map.insert(normalize_ident(key), value_str);
+            }
+            _ => continue,
+        }
+    }
+    map
+}
+
 /// Convert SqlOption s to map, and convert value to lowercase
 pub fn sql_options_to_map(opts: &[SqlOption]) -> HashMap<String, String> {
     let mut map = HashMap::with_capacity(opts.len());
     for SqlOption { name, value } in opts {
-        let value_str = match value {
-            SqlValue::SingleQuotedString(s) | SqlValue::DoubleQuotedString(s) => s.clone(),
-            _ => value.to_string().to_ascii_lowercase(),
-        };
-        map.insert(normalize_ident(name), value_str);
+        map.insert(normalize_ident(name), sql_value_to_string(value));
     }
     map
 }

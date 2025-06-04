@@ -2,8 +2,8 @@ use std::fmt;
 
 use datafusion::sql::parser::CreateExternalTable;
 use datafusion::sql::sqlparser::ast::{
-    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, Statement, TableFactor,
-    Value,
+    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr,
+    SqlOption as SqlSqlOption, Statement, TableFactor, Value,
 };
 use datafusion::sql::sqlparser::parser::ParserError;
 use models::codec::Encoding;
@@ -77,6 +77,15 @@ pub enum ExtStatement {
 pub struct SqlOption {
     pub name: Ident,
     pub value: Value,
+}
+
+impl From<SqlOption> for SqlSqlOption {
+    fn from(sql_opt: SqlOption) -> Self {
+        SqlSqlOption::KeyValue {
+            key: sql_opt.name,
+            value: Expr::Value(sql_opt.value.into()),
+        }
+    }
 }
 
 /// Readable file type

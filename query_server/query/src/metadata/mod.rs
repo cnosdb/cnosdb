@@ -62,10 +62,7 @@ pub trait ContextProviderExtension: ContextProvider {
     fn reset_access_databases(&self) -> DatabaseSet;
     fn get_db_precision(&self, name: &str) -> Result<Precision, MetaError>;
     fn get_db_info(&self, name: &str) -> Result<Option<DatabaseInfo>, MetaError>;
-    fn get_table_source(
-        &self,
-        name: TableReference,
-    ) -> datafusion::common::Result<Arc<TableSourceAdapter>>;
+    fn get_table_source_adapter(&self, name: TableReference) -> DFResult<Arc<TableSourceAdapter>>;
     fn database_table_exist(
         &self,
         _database: &str,
@@ -79,7 +76,7 @@ pub type TableHandleProviderRef = Arc<dyn TableHandleProvider + Send + Sync>;
 pub type VarProviderRef = Arc<dyn VarProvider + Send + Sync>;
 
 pub trait TableHandleProvider {
-    fn build_table_handle(&self, ddatabase_name: &str, table_name: &str) -> DFResult<TableHandle>;
+    fn build_table_handle(&self, database_name: &str, table_name: &str) -> DFResult<TableHandle>;
 }
 
 pub struct MetadataProvider {
@@ -127,7 +124,7 @@ impl MetadataProvider {
         tenant_name: &str,
         database_name: &str,
         table_name: &str,
-    ) -> datafusion::common::Result<Option<Arc<dyn TableProvider>>> {
+    ) -> DFResult<Option<Arc<dyn TableProvider>>> {
         // process INFORMATION_SCHEMA
         if database_name.eq_ignore_ascii_case(self.information_schema_provider.name()) {
             let mem_table = self
@@ -172,7 +169,7 @@ impl MetadataProvider {
         Ok(None)
     }
 
-    fn build_table_handle(&self, name: &ResolvedTable) -> datafusion::common::Result<TableHandle> {
+    fn build_table_handle(&self, name: &ResolvedTable) -> DFResult<TableHandle> {
         let tenant_name = name.tenant();
         let database_name = name.database();
         let table_name = name.table();
@@ -238,10 +235,10 @@ impl ContextProviderExtension for MetadataProvider {
         self.meta_client.get_db_info(name)
     }
 
-    fn get_table_source(
+    fn get_table_source_adapter(
         &self,
         table_ref: TableReference,
-    ) -> datafusion::common::Result<Arc<TableSourceAdapter>> {
+    ) -> DFResult<Arc<TableSourceAdapter>> {
         let name = table_ref
             .clone()
             .resolve_object(self.session.tenant(), self.session.default_database())?;
@@ -266,7 +263,7 @@ impl ContextProviderExtension for MetadataProvider {
         let table_handle = self.build_table_handle(&name)?;
 
         Ok(Arc::new(TableSourceAdapter::try_new(
-            table_ref.to_owned_reference(),
+            table_ref,
             database_name,
             table_name,
             table_handle,
@@ -306,7 +303,8 @@ impl ContextProviderExtension for MetadataProvider {
 
 impl ContextProvider for MetadataProvider {
     fn get_table_source(&self, name: TableReference) -> DFResult<Arc<dyn TableSource>> {
-        Ok(self.get_table_source(name)?)
+        let table_source = self.get_table_source_adapter(name)?;
+        Ok(table_source)
     }
 
     fn get_function_meta(&self, name: &str) -> Option<Arc<ScalarUDF>> {

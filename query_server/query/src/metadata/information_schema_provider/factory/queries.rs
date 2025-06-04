@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::catalog::memory::MemorySourceConfig;
+use datafusion::catalog::Session;
 use datafusion::datasource::{TableProvider, TableType};
-use datafusion::execution::context::SessionState;
 use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::logical_expr::Expr;
 use datafusion::physical_plan::ExecutionPlan;
@@ -55,6 +55,16 @@ pub struct InformationQueriesTable {
     metadata: MetaClientRef,
 }
 
+impl std::fmt::Debug for InformationQueriesTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InformationQueriesTable")
+            .field("user", &self.user)
+            .field("query_tracker", &"ignore")
+            .field("metadata", &self.metadata)
+            .finish()
+    }
+}
+
 impl InformationQueriesTable {
     pub fn new(query_tracker: Arc<QueryTracker>, metadata: MetaClientRef, user: User) -> Self {
         Self {
@@ -81,7 +91,7 @@ impl TableProvider for InformationQueriesTable {
 
     async fn scan(
         &self,
-        _state: &SessionState,
+        _state: &dyn Session,
         projection: Option<&Vec<usize>>,
         _filters: &[Expr],
         _aggregate: Option<&TableScanAggregate>,
@@ -130,7 +140,7 @@ impl TableProvider for InformationQueriesTable {
 
         let mem_exec =
             MemorySourceConfig::try_new_exec(&[vec![rb]], self.schema(), projection.cloned())?;
-        Ok(Arc::new(mem_exec))
+        Ok(mem_exec)
     }
 }
 
