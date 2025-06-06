@@ -3,11 +3,13 @@ use std::sync::Arc;
 
 use datafusion::common::Statistics;
 use datafusion::execution::TaskContext;
-use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr, PhysicalSortRequirement};
+use datafusion::physical_expr::{
+    EquivalenceProperties, LexOrdering, LexRequirement, PhysicalSortExpr,
+};
 use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, Partitioning, PhysicalExpr,
-    SendableRecordBatchStream,
+    PlanProperties, SendableRecordBatchStream,
 };
 use models::arrow::SchemaRef;
 use spi::DFResult;
@@ -85,20 +87,22 @@ impl ExecutionPlan for TimeSeriesGenFuncExec {
         vec![Distribution::SinglePartition]
     }
 
-    fn required_input_ordering(&self) -> Vec<Option<Vec<PhysicalSortRequirement>>> {
+    fn required_input_ordering(&self) -> Vec<Option<LexRequirement>> {
         let sort_expr = PhysicalSortExpr {
             expr: self.time_expr.clone(),
             options: Default::default(),
         };
-        vec![Some(PhysicalSortRequirement::from_sort_exprs([&sort_expr]))]
+        vec![Some(LexRequirement::from_lex_ordering(LexOrdering::new(
+            vec![sort_expr],
+        )))]
     }
 
     fn maintains_input_order(&self) -> Vec<bool> {
         vec![true]
     }
 
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
-        vec![Arc::clone(&self.input)]
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+        vec![&self.input]
     }
 
     fn with_new_children(
@@ -139,8 +143,8 @@ impl ExecutionPlan for TimeSeriesGenFuncExec {
         )))
     }
 
-    fn statistics(&self) -> Statistics {
-        Statistics::default()
+    fn statistics(&self) -> DFResult<Statistics> {
+        Ok(Statistics::default())
     }
 }
 

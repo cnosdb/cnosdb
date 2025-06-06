@@ -5,7 +5,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use geo::Geometry;
-use geozero::wkt::WktStr;
+use geozero::wkt::Wkt;
 use geozero::ToGeo;
 use models::gis::data_type::GeometryType;
 use spi::QueryError;
@@ -57,7 +57,7 @@ macro_rules! define_check_wkt {
                 match sub_type {
                     $(GeometryType::$sub_type => {
                         for ele in str_array.iter().flatten() {
-                            let geom = WktStr(ele).to_geo().map_err(|err| {
+                            let geom = Wkt(ele).to_geo().map_err(|err| {
                                 DataFusionError::External(Box::new(QueryError::InvalidGeometryType {
                                     reason: format!("{}, expect {}, got {:?}", err, stringify!($sub_type), ele),
                                 }))

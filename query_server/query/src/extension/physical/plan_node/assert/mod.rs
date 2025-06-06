@@ -10,10 +10,9 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::Result;
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr};
 use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream,
+    DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties, RecordBatchStream,
     SendableRecordBatchStream, Statistics,
 };
 use futures::{Stream, StreamExt};
@@ -62,10 +61,11 @@ impl ExecutionPlan for AssertExec {
     }
 
     fn properties(&self) -> &PlanProperties {
-        &self.child.properties
+        self.child.properties()
     }
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
-        vec![self.child.clone()]
+
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+        vec![&self.child]
     }
 
     fn maintains_input_order(&self) -> Vec<bool> {
@@ -106,9 +106,9 @@ impl ExecutionPlan for AssertExec {
         Some(self.metrics.clone_inner())
     }
 
-    fn statistics(&self) -> Statistics {
+    fn statistics(&self) -> Result<Statistics> {
         // TODO stats: compute statistics from assert_expr
-        Statistics::default()
+        Ok(Statistics::default())
     }
 }
 
