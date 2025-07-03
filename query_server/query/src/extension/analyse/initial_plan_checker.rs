@@ -7,7 +7,7 @@ use datafusion::logical_expr::{LogicalPlan, TableScan};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use spi::AnalyzerSnafu;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct InitialPlanChecker {}
 
 impl AnalyzerRule for InitialPlanChecker {

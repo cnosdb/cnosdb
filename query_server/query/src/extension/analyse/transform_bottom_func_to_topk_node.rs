@@ -1,4 +1,4 @@
-use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::common::tree_node::{Transformed, TransformedResult as _, TreeNode};
 use datafusion::config::ConfigOptions;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_expr::utils::find_exprs_in_exprs;
@@ -13,11 +13,12 @@ const INVALID_EXPRS: &str = "1. There cannot be nested selection functions. 2. T
 const INVALID_ARGUMENTS: &str =
     "Routine not match. Maybe (field_name, k). k is integer literal value. The range of values for k is [1, 255].";
 
+#[derive(Debug)]
 pub struct TransformBottomFuncToTopkNodeRule {}
 
 impl AnalyzerRule for TransformBottomFuncToTopkNodeRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
-        plan.transform_up(&analyze_internal)
+        plan.transform_up(&analyze_internal).data()
     }
 
     fn name(&self) -> &str {
@@ -34,14 +35,14 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
             // extract bottom function expr, If it does not exist, return None
             extract_bottom_function(&projection.expr),
         ) {
-            return Ok(Transformed::Yes(do_transform(
+            return Ok(Transformed::yes(do_transform(
                 &bottom_function,
                 projection,
             )?));
         };
     }
 
-    Ok(Transformed::No(plan))
+    Ok(Transformed::no(plan))
 }
 
 fn do_transform(bottom_function: &Expr, projection: &Projection) -> Result<LogicalPlan> {
@@ -49,14 +50,14 @@ fn do_transform(bottom_function: &Expr, projection: &Projection) -> Result<Logic
 
     let (field, k) = extract_args(bottom_function)?;
 
-    let sort_expr = Expr::Sort(expr::Sort {
+    let sort_expr = expr::Sort {
         // The expression to sort on
-        expr: Box::new(field.clone()),
+        expr: field.clone(),
         // The direction of the sort
         asc: true,
         // Whether to put Nulls before all other data values
         nulls_first: false,
-    });
+    };
 
     let topk_node = LogicalPlan::Sort(Sort {
         expr: vec![sort_expr],
@@ -83,8 +84,8 @@ fn valid_exprs(exprs: &[Expr]) -> Result<bool> {
 
     let exprs = exprs
         .iter()
-        .map(|e| e.display_name())
-        .collect::<Result<Vec<_>>>()?;
+        .map(|e| e.schema_name().to_string())
+        .collect::<Vec<_>>();
 
     // 1. There cannot be nested selection functions
     // 2. There cannot be multiple selection functions
@@ -116,7 +117,7 @@ fn extract_bottom_function(exprs: &[Expr]) -> Option<Expr> {
             Expr::ScalarFunction(expr::ScalarFunction {
                 func,
                 ..
-            }) if func.name.eq_ignore_ascii_case(BOTTOM)
+            }) if func.name().eq_ignore_ascii_case(BOTTOM)
         )
     })
     .first()
@@ -124,7 +125,7 @@ fn extract_bottom_function(exprs: &[Expr]) -> Option<Expr> {
 }
 
 fn extract_args(expr: &Expr) -> Result<(Expr, usize)> {
-    if let Expr::ScalarUDF(expr::ScalarFunction { func: _, args }) = expr {
+    if let Expr::ScalarFunction(expr::ScalarFunction { func: _, args }) = expr {
         if args.len() != 2 {
             return Err(DataFusionError::Plan(INVALID_ARGUMENTS.to_string()));
         }

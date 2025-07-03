@@ -105,6 +105,10 @@ impl TableSourceAdapter {
 
 #[async_trait]
 impl TableSource for TableSourceAdapter {
+    fn name(&self) -> &str {
+        "TableSourceAdapter"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }

@@ -5,7 +5,7 @@ use datafusion::logical_expr::LogicalPlan;
 
 use super::AnalyzerRule;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct UnsupportedOperationChecker {}
 
 impl AnalyzerRule for UnsupportedOperationChecker {
@@ -41,11 +41,6 @@ impl<'a> TreeNodeVisitor<'a> for UnsupportedOperationVisitor {
             LogicalPlan::Join(_) => {
                 return Err(DataFusionError::Plan(
                     "Unsupported operation in streaming query: join".to_string(),
-                ));
-            }
-            LogicalPlan::CrossJoin(_) => {
-                return Err(DataFusionError::Plan(
-                    "Unsupported operation in streaming query: cross join".to_string(),
                 ));
             }
             LogicalPlan::Limit(_) => {

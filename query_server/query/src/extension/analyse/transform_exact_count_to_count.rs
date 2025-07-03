@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::common::tree_node::{Transformed, TransformedResult as _, TreeNode};
 use datafusion::config::ConfigOptions;
 use datafusion::error::Result;
 use datafusion::functions_aggregate::count::Count;
@@ -10,11 +10,12 @@ use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::Expr;
 
 /// convert exact_count to count, but unsupported pushdown
+#[derive(Debug)]
 pub struct TransformExactCountToCountRule {}
 
 impl AnalyzerRule for TransformExactCountToCountRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
-        plan.transform_up(&analyze_internal)
+        plan.transform_up(&analyze_internal).data()
     }
 
     fn name(&self) -> &str {
@@ -30,12 +31,12 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
                 let new_aggregate = transform_aggregation(aggregate.clone())?;
                 projection.input = Arc::new(LogicalPlan::Aggregate(new_aggregate));
             }
-            return Ok(Transformed::Yes(LogicalPlan::Projection(projection)));
+            return Ok(Transformed::yes(LogicalPlan::Projection(projection)));
         }
-        return Ok(Transformed::No(LogicalPlan::Projection(projection)));
+        return Ok(Transformed::no(LogicalPlan::Projection(projection)));
     }
 
-    Ok(Transformed::No(plan))
+    Ok(Transformed::no(plan))
 }
 
 /// Transform logical plan's expressions, return true if any transformation is done:
@@ -59,7 +60,7 @@ fn transform_aggregation(aggregate: Aggregate) -> Result<Aggregate> {
     let mut new_aggr_exprs = Vec::with_capacity(aggregate.aggr_expr.len());
     for aggr_expr in aggregate.aggr_expr {
         match aggr_expr {
-            Expr::AggregateFunction(udaf) if udaf.func.name == "exact_count" => {
+            Expr::AggregateFunction(udaf) if udaf.func.name() == "exact_count" => {
                 let new_function = AggregateFunction {
                     func: Arc::new(AggregateUDF::new_from_impl(Count::new())),
                     params: AggregateFunctionParams {
@@ -148,10 +149,8 @@ mod test {
                 .sql("SELECT exACT_CoUNt(a), b FROM t GROUP BY b")
                 .await
                 .unwrap();
-            let (plan_2, was_transformed) = analyze_internal(df.logical_plan().clone())
-                .unwrap()
-                .into_pair();
-            assert!(was_transformed);
+            let plan_2 = analyze_internal(df.logical_plan().clone()).unwrap();
+            assert!(plan_2.transformed);
             assert_eq!(
                 format!("{plan_2:?}"),
                 "Projection: COUNT(t.a), t.b\
@@ -164,10 +163,8 @@ mod test {
                 .sql("SELECT count(a), b, exact_count(c), max(d) FROM t GROUP BY b")
                 .await
                 .unwrap();
-            let (plan_2, was_transformed) = analyze_internal(df.logical_plan().clone())
-                .unwrap()
-                .into_pair();
-            assert!(was_transformed);
+            let plan_2 = analyze_internal(df.logical_plan().clone()).unwrap();
+            assert!(plan_2.transformed);
             assert_eq!(
                 format!("{plan_2:?}"),
                 "Projection: COUNT(t.a), t.b, COUNT(t.c), MAX(t.d)\

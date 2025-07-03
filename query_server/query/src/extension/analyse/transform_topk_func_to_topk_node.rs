@@ -1,4 +1,4 @@
-use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::common::tree_node::{Transformed, TransformedResult as _, TreeNode};
 use datafusion::config::ConfigOptions;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_expr::utils::find_exprs_in_exprs;
@@ -13,11 +13,12 @@ const INVALID_EXPRS: &str = "1. There cannot be nested selection functions. 2. T
 const INVALID_ARGUMENTS: &str =
     "Routine not match. Maybe (field_name, k). k is integer literal value. The range of values for k is [1, 255].";
 
+#[derive(Debug)]
 pub struct TransformTopkFuncToTopkNodeRule {}
 
 impl AnalyzerRule for TransformTopkFuncToTopkNodeRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
-        plan.transform_up(&analyze_internal)
+        plan.transform_up(&analyze_internal).data()
     }
 
     fn name(&self) -> &str {

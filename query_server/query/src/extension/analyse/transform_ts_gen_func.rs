@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::common::tree_node::{Transformed, TransformedResult as _, TreeNode};
 use datafusion::common::DFSchema;
 use datafusion::config::ConfigOptions;
 use datafusion::logical_expr::expr::{Alias, ScalarFunction, Sort as SortExpr};
@@ -11,7 +11,7 @@ use datafusion::logical_expr::{
 };
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::scalar::ScalarValue;
-use models::arrow::{DataType, Field};
+use models::arrow::Field;
 use spi::DFResult;
 
 use crate::extension::expr::TimeSeriesGenFunc;
@@ -23,11 +23,13 @@ use crate::extension::logical::plan_node::ts_gen_func::TimeSeriesGenFuncNode;
 /// - If there are another expressions in the plan, it returns an error.
 /// - If the UDF is not `TimeSeriesGenFunc`, it returns the original plan.
 /// - If the UDF is `TimeSeriesGenFunc`, it returns a new plan:
+#[derive(Debug)]
 pub struct TransformTimeSeriesGenFunc;
 
 impl AnalyzerRule for TransformTimeSeriesGenFunc {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> DFResult<LogicalPlan> {
         plan.transform_up(|plan| Self::analyze_internal(plan))
+            .data()
     }
 
     fn name(&self) -> &str {
@@ -41,7 +43,7 @@ impl TransformTimeSeriesGenFunc {
             let (expr, alias) = if let Expr::Alias(Alias { expr, name, .. }) = &expr {
                 (expr.as_ref(), Cow::Borrowed(name))
             } else {
-                (expr, Cow::Owned(expr.to_string()))
+                (&expr, Cow::Owned(expr.to_string()))
             };
             if let Expr::ScalarFunction(ScalarFunction { func, args }) = expr {
                 if let Some(ts_gen_func) = TimeSeriesGenFunc::try_from_str(&func.name()) {
@@ -64,7 +66,7 @@ impl TransformTimeSeriesGenFunc {
                 }
             }
         }
-        Ok(Transformed::No(plan))
+        Ok(Transformed::no(plan))
     }
 
     /// For input plan **input**, return

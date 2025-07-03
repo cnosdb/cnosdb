@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::common::tree_node::{Transformed, TransformedResult as _, TreeNode};
 use datafusion::common::Result as DFResult;
 use datafusion::config::ConfigOptions;
 use datafusion::error::DataFusionError;
@@ -18,7 +18,7 @@ use crate::extension::logical::plan_node::update::UpdateNode;
 use crate::extension::logical::plan_node::update_tag::UpdateTagPlanNode;
 use crate::extension::utils::{downcast_plan_node, downcast_table_source};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[non_exhaustive]
 pub struct TransformUpdateRule {}
 
@@ -30,7 +30,7 @@ impl TransformUpdateRule {
 
 impl AnalyzerRule for TransformUpdateRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> DFResult<LogicalPlan> {
-        plan.transform_up(&analyze_internal)
+        plan.transform_up(&analyze_internal).data()
     }
 
     fn name(&self) -> &str {
