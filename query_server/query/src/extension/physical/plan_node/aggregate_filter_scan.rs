@@ -5,16 +5,16 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use coordinator::service::CoordinatorRef;
-use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr};
+use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
     SendableRecordBatchStream, Statistics,
 };
+use models::arrow::SchemaRef;
 use models::predicate::domain::{PredicateRef, PushedAggregateFunction};
 use models::predicate::PlacedSplit;
 use models::schema::tskv_table_schema::TskvTableSchemaRef;
@@ -28,8 +28,8 @@ use crate::extension::physical::plan_node::TableScanMetrics;
 #[derive(Clone)]
 pub struct AggregateFilterTskvExec {
     coord: CoordinatorRef,
-    schema: SchemaRef,
     table_schema: TskvTableSchemaRef,
+    schema: SchemaRef,
     pushed_aggs: Vec<PushedAggregateFunction>,
     filter: PredicateRef,
     splits: Vec<PlacedSplit>,
@@ -49,13 +49,13 @@ impl AggregateFilterTskvExec {
         let partitioning = Partitioning::UnknownPartitioning(splits.len());
         Self {
             coord,
-            schema,
             table_schema,
+            schema: schema.clone(),
             pushed_aggs,
             filter,
             splits,
             properties: PlanProperties::new(
-                EquivalenceProperties::new(proj_schema),
+                EquivalenceProperties::new(schema),
                 partitioning,
                 EmissionType::Both,
                 Boundedness::Bounded,
@@ -74,15 +74,11 @@ impl ExecutionPlan for AggregateFilterTskvExec {
         self
     }
 
-    fn schema(&self) -> SchemaRef {
-        self.schema.clone()
-    }
-
     fn properties(&self) -> &PlanProperties {
         &self.properties
     }
 
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         vec![]
     }
 
@@ -152,8 +148,8 @@ impl ExecutionPlan for AggregateFilterTskvExec {
         Some(self.metrics.clone_inner())
     }
 
-    fn statistics(&self) -> Statistics {
-        Statistics::default()
+    fn statistics(&self) -> Result<Statistics> {
+        Ok(Statistics::default())
     }
 }
 

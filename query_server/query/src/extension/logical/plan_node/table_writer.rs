@@ -8,13 +8,31 @@ use datafusion::logical_expr::utils::exprlist_to_fields;
 use datafusion::logical_expr::{Extension, LogicalPlan, TableSource, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
 
-#[derive(Clone, PartialOrd)]
+#[derive(Clone)]
 pub struct TableWriterPlanNode {
     pub target_table_name: String,
     pub target_table: Arc<dyn TableSource>,
     pub input: Arc<LogicalPlan>,
     pub exprs: Vec<Expr>,
     pub schema: DFSchemaRef,
+}
+
+impl PartialOrd for TableWriterPlanNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.target_table_name.partial_cmp(&other.target_table_name) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.input.partial_cmp(&other.input) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.exprs.partial_cmp(&other.exprs) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.schema.fields().partial_cmp(other.schema.fields())
+    }
 }
 
 impl TableWriterPlanNode {

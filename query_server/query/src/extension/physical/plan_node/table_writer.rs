@@ -8,14 +8,13 @@ use datafusion::arrow::datatypes::{Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::PhysicalSortExpr;
 use datafusion::physical_plan::memory::MemoryStream;
 use datafusion::physical_plan::metrics::{
     self, ExecutionPlanMetricsSet, MetricBuilder, MetricsSet,
 };
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, Partitioning, PlanProperties,
+    DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, PlanProperties,
     SendableRecordBatchStream, Statistics,
 };
 use futures::TryStreamExt;
@@ -86,16 +85,16 @@ impl ExecutionPlan for TableWriterExec {
         self.schema.clone()
     }
 
-    fn benefits_from_input_partitioning(&self) -> bool {
-        false
+    fn benefits_from_input_partitioning(&self) -> Vec<bool> {
+        vec![false]
     }
 
     fn required_input_distribution(&self) -> Vec<Distribution> {
         vec![Distribution::UnspecifiedDistribution]
     }
 
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
-        vec![self.input.clone()]
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+        vec![&self.input]
     }
 
     fn with_new_children(
@@ -146,7 +145,7 @@ impl ExecutionPlan for TableWriterExec {
         Some(self.metrics.clone_inner())
     }
 
-    fn statistics(&self) -> Statistics {
+    fn statistics(&self) -> Result<Statistics> {
         self.input.statistics()
     }
 }

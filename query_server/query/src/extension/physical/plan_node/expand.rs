@@ -7,9 +7,11 @@ use std::task::{Context, Poll};
 use datafusion::arrow::compute::concat_batches;
 use datafusion::arrow::datatypes::{Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::{RecordBatch, RecordBatchOptions};
+use datafusion::common::stats::Precision;
 use datafusion::error::Result;
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr};
+use datafusion::physical_expr::equivalence::ProjectionMapping;
+use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::expressions::Column;
 use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::{
@@ -29,9 +31,6 @@ pub struct ExpandExec {
     schema: SchemaRef,
     /// The input plan
     input: Arc<dyn ExecutionPlan>,
-    /// The alias map used to normalize out expressions like Partitioning and PhysicalSortExpr
-    /// The key is the column from the input schema and the values are the columns from the output schema
-    alias_map: HashMap<Column, Vec<Column>>,
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
     ///
@@ -69,17 +68,17 @@ impl ExpandExec {
             input_schema.metadata().clone(),
         ));
 
-        let mut alias_map: HashMap<Column, Vec<Column>> = HashMap::new();
+        let mut alias_exprs: Vec<(Arc<dyn PhysicalExpr>, String)> = Vec::new();
         for (expression, name) in expr.iter() {
             if let Some(column) = expression.as_any().downcast_ref::<Column>() {
                 let new_col_idx = schema.index_of(name)?;
                 // When the column name is the same, but index does not equal, treat it as Alias
                 if (column.name() != name) || (column.index() != new_col_idx) {
-                    let entry = alias_map.entry(column.clone()).or_default();
-                    entry.push(Column::new(name, new_col_idx));
+                    alias_exprs.push((expression.clone(), name.clone()));
                 }
             };
         }
+        let alias_map = ProjectionMapping::try_new(&alias_exprs, &schema)?;
 
         // Output Ordering need to respect the alias
         let input_eq_properties = input.equivalence_properties();
@@ -89,23 +88,23 @@ impl ExpandExec {
                 let normalized_exprs = exprs
                     .into_iter()
                     .map(|expr| input_eq_properties.project_expr(expr, &alias_map))
+                    .flatten()
                     .collect::<Vec<_>>();
-                Partitioning::Hash(normalized_exprs, part)
+                Partitioning::Hash(normalized_exprs, *part)
             }
-            other => other,
+            other => other.clone(),
         };
 
         Ok(Self {
             exprs,
             schema: schema.clone(),
             input: input.clone(),
-            alias_map,
             metrics: ExecutionPlanMetricsSet::new(),
             properties: PlanProperties::new(
                 output_eq_properties,
                 output_partitioning,
-                emission_type,
-                boundedness,
+                EmissionType::Incremental,
+                Boundedness::Bounded,
             ),
         })
     }
@@ -140,8 +139,8 @@ impl ExecutionPlan for ExpandExec {
         self.schema.clone()
     }
 
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
-        vec![self.input.clone()]
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+        vec![&self.input]
     }
 
     fn maintains_input_order(&self) -> Vec<bool> {
@@ -189,11 +188,12 @@ impl ExecutionPlan for ExpandExec {
         Some(self.metrics.clone_inner())
     }
 
-    fn statistics(&self) -> Statistics {
-        stats_projection(
-            self.input.statistics(),
+    fn statistics(&self) -> Result<Statistics> {
+        let stats = stats_projection(
+            self.input.statistics()?,
             self.expr().iter().map(|(e, _)| Arc::clone(e)),
-        )
+        );
+        Ok(stats)
     }
 }
 
@@ -252,25 +252,23 @@ fn stats_projection(
     stats: Statistics,
     exprs: impl Iterator<Item = Arc<dyn PhysicalExpr>>,
 ) -> Statistics {
-    let column_statistics = stats.column_statistics.map(|input_col_stats| {
-        exprs
-            .map(|e| {
-                if let Some(col) = e.as_any().downcast_ref::<Column>() {
-                    input_col_stats[col.index()].clone()
-                } else {
-                    // TODO stats: estimate more statistics from expressions
-                    // (expressions should compute their statistics themselves)
-                    ColumnStatistics::default()
-                }
-            })
-            .collect()
-    });
+    let column_statistics = exprs
+        .map(|e| {
+            if let Some(col) = e.as_any().downcast_ref::<Column>() {
+                stats.column_statistics[col.index()].clone()
+            } else {
+                // TODO stats: estimate more statistics from expressions
+                // (expressions should compute their statistics themselves)
+                ColumnStatistics::default()
+            }
+        })
+        .collect();
 
     Statistics {
         num_rows: stats.num_rows,
         column_statistics,
         // TODO stats: knowing the type of the new columns we can guess the output size
-        total_byte_size: None,
+        total_byte_size: Precision::Absent,
     }
 }
 
@@ -282,11 +280,10 @@ impl ExpandStream {
     ) -> Result<RecordBatch> {
         // records time on drop
         let _timer = self.baseline_metrics.elapsed_compute().timer();
-        let arrays = expr
-            .iter()
-            .map(|expr| expr.evaluate(batch))
-            .map(|r| r.map(|v| v.into_array(batch.num_rows())))
-            .collect::<Result<Vec<_>>>()?;
+        let mut arrays = Vec::with_capacity(expr.len());
+        for r in expr.iter().map(|expr| expr.evaluate(batch)) {
+            arrays.push(r?.into_array(batch.num_rows())?);
+        }
 
         if arrays.is_empty() {
             let options = RecordBatchOptions::new().with_row_count(Some(batch.num_rows()));

@@ -53,12 +53,12 @@ impl ScalarUDFImpl for ValueRepairFunc {
 
 pub fn compute(
     timestamps: &mut Vec<i64>,
-    fields: &mut [Vec<f64>],
+    fields: &mut [f64],
     arg_str: Option<&str>,
 ) -> DFResult<(Vec<i64>, Vec<f64>)> {
     let arg = get_arg(arg_str)?;
     let method = get_method_from_arg(&arg)?;
-    let repaired = value_repair(timestamps, &mut fields[0], method)?;
+    let repaired = value_repair(timestamps, fields, method)?;
     Ok((std::mem::take(timestamps), repaired))
 }
 

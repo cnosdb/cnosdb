@@ -34,7 +34,7 @@ impl LogicalPlanExt for LogicalPlan {
         let exprs = self
             .expressions()
             .into_iter()
-            .map(|e| e.rewrite(&mut replacer))
+            .map(|e| e.rewrite(&mut replacer).map(|e| e.data))
             .collect::<DFResult<Vec<_>>>()?;
 
         let new_inputs = self.inputs().into_iter().cloned().collect::<Vec<_>>();

@@ -10,12 +10,26 @@ use models::schema::stream_table_schema::Watermark;
 
 use crate::extension::{EVENT_TIME_COLUMN, WATERMARK_DELAY_MS};
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct WatermarkNode {
     pub watermark: Watermark,
     pub input: Arc<LogicalPlan>,
     /// The schema description of the output
     pub schema: DFSchemaRef,
+}
+
+impl PartialOrd for WatermarkNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.watermark.partial_cmp(&other.watermark) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.input.partial_cmp(&other.input) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.schema.fields().partial_cmp(other.schema.fields())
+    }
 }
 
 impl WatermarkNode {
@@ -32,7 +46,7 @@ impl WatermarkNode {
             watermark.delay.as_millis().to_string(),
         );
 
-        let schema = Arc::new(DFSchema::new_with_metadata(
+        let schema = Arc::new(DFSchema::from_unqualified_fields(
             schema.fields().clone(),
             metadata,
         )?);
@@ -77,7 +91,7 @@ impl UserDefinedLogicalNodeCore for WatermarkNode {
         )
     }
 
-    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+    fn with_exprs_and_inputs(&self, _exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
         if inputs.len() != 1 {
             return Err(DataFusionError::Plan(
                 "WatermarkNode should have exactly one input".to_string(),

@@ -1,13 +1,11 @@
-use std::sync::Arc;
-
 use datafusion::arrow::array::{ArrayRef, UInt64Array};
 use datafusion::arrow::compute::sort_to_indices;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::common::{downcast_value, Result as DFResult};
+use datafusion::logical_expr::function::AccumulatorArgs;
 use datafusion::logical_expr::type_coercion::aggregates::TIMESTAMPS;
 use datafusion::logical_expr::{
-    AccumulatorFactoryFunction, AggregateUDF, ReturnTypeFunction, Signature, StateTypeFunction,
-    TypeSignature, Volatility,
+    AggregateUDF, AggregateUDFImpl, Signature, TypeSignature, Volatility,
 };
 use datafusion::physical_plan::Accumulator;
 use datafusion::scalar::ScalarValue;
@@ -20,57 +18,64 @@ use crate::extension::expr::aggregate_function::{
 };
 
 pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<(), QueryError> {
-    func_manager.register_udaf(new())?;
+    func_manager.register_udaf(AggregateUDF::new_from_impl(GaugeAggFunction::new()))?;
     Ok(())
 }
 
-fn new() -> AggregateUDF {
-    let return_type_func: ReturnTypeFunction = Arc::new(move |input| {
-        let result = GaugeData::try_new_null(input[0].clone(), input[1].clone())?;
-        let date_type = result.into_scalar()?.data_type();
+#[derive(Debug)]
+pub struct GaugeAggFunction {
+    signature: Signature,
+}
+
+impl GaugeAggFunction {
+    pub fn new() -> Self {
+        // gauge_agg(
+        //     ts TIMESTAMP,
+        //     value DOUBLE
+        // TODO    [, bounds TSTZRANGE]
+        //   ) RETURNS GaugeData
+        let type_signatures = TIMESTAMPS
+            .iter()
+            .map(|t| TypeSignature::Exact(vec![t.clone(), DataType::Float64]))
+            .collect();
+        Self {
+            signature: Signature::one_of(type_signatures, Volatility::Immutable),
+        }
+    }
+}
+
+impl AggregateUDFImpl for GaugeAggFunction {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        GAUGE_AGG_UDAF_NAME
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, arg_types: &[DataType]) -> DFResult<DataType> {
+        let agg_result = GaugeData::try_new_null(arg_types[0].clone(), arg_types[1].clone())?;
+        let date_type = agg_result.into_scalar()?.data_type();
 
         trace::trace!("return_type: {:?}", date_type);
 
-        Ok(Arc::new(date_type))
-    });
+        Ok(date_type)
+    }
 
-    let state_type_func: StateTypeFunction = Arc::new(move |input, _| {
-        let null_state =
-            GaugeDataBuilder::new(input[0].clone(), input[1].clone()).try_to_state()?;
-        let state_data_types = null_state.iter().map(|v| v.data_type()).collect();
-        Ok(Arc::new(state_data_types))
-    });
-
-    let accumulator: AccumulatorFactoryFunction = Arc::new(|input, output| {
-        let ts_data_type = input[0].clone();
-        let value_data_type = input[1].clone();
+    fn accumulator(&self, acc_args: AccumulatorArgs) -> DFResult<Box<dyn Accumulator>> {
+        let ts_data_type = acc_args.exprs[0].data_type(acc_args.schema)?;
+        let value_data_type = acc_args.exprs[1].data_type(acc_args.schema)?;
 
         Ok(Box::new(GaugeAggAccumulator::try_new(
             ts_data_type,
             value_data_type,
-            output.clone(),
+            acc_args.return_type.clone(),
         )?))
-    });
-
-    // gauge_agg(
-    //     ts TIMESTAMP,
-    //     value DOUBLE
-    // TODO    [, bounds TSTZRANGE]
-    //   ) RETURNS GaugeData
-    let type_signatures = TIMESTAMPS
-        .iter()
-        .map(|t| TypeSignature::Exact(vec![t.clone(), DataType::Float64]))
-        .collect();
-
-    AggregateUDF::new_with_preference(
-        GAUGE_AGG_UDAF_NAME,
-        &Signature::one_of(type_signatures, Volatility::Immutable),
-        &return_type_func,
-        &accumulator,
-        &state_type_func,
-        true,
-        false,
-    )
+    }
 }
 
 /// An accumulator to compute the average
@@ -308,7 +313,7 @@ impl AggState for GaugeDataBuilder {
             .map(|e| e.into_scalar())
             .collect::<DFResult<Vec<_>>>()?;
         let child_type = TSPoint::try_new_null(time_data_type, value_data_type)?.data_type()?;
-        let point_list = ScalarValue::new_list_nullable(&scalars, &child_type);
+        let point_list = ScalarValue::List(ScalarValue::new_list_nullable(&scalars, &child_type));
 
         Ok(vec![point_list, num_elements])
     }

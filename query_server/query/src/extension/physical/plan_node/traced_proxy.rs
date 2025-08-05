@@ -7,11 +7,11 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::Result;
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr, PhysicalSortRequirement};
+use datafusion::physical_expr::LexRequirement;
 use datafusion::physical_plan::metrics::MetricsSet;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, Metric, Partitioning,
-    PlanProperties, RecordBatchStream, SendableRecordBatchStream, Statistics,
+    DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, Metric, PlanProperties,
+    RecordBatchStream, SendableRecordBatchStream, Statistics,
 };
 use futures::{Stream, StreamExt};
 use trace::span_ext::SpanExt;
@@ -61,7 +61,7 @@ impl ExecutionPlan for TracedProxyExec {
         self.inner.schema()
     }
 
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         self.inner.children()
     }
 
@@ -118,7 +118,7 @@ impl ExecutionPlan for TracedProxyExec {
         )))
     }
 
-    fn statistics(&self) -> Statistics {
+    fn statistics(&self) -> Result<Statistics> {
         self.inner.statistics()
     }
 
@@ -130,7 +130,7 @@ impl ExecutionPlan for TracedProxyExec {
         self.inner.required_input_distribution()
     }
 
-    fn required_input_ordering(&self) -> Vec<Option<Vec<PhysicalSortRequirement>>> {
+    fn required_input_ordering(&self) -> Vec<Option<LexRequirement>> {
         self.inner.required_input_ordering()
     }
 
@@ -138,7 +138,7 @@ impl ExecutionPlan for TracedProxyExec {
         self.inner.maintains_input_order()
     }
 
-    fn benefits_from_input_partitioning(&self) -> bool {
+    fn benefits_from_input_partitioning(&self) -> Vec<bool> {
         self.inner.benefits_from_input_partitioning()
     }
 }

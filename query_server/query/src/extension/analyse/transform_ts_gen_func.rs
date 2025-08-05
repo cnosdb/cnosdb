@@ -56,7 +56,7 @@ impl TransformTimeSeriesGenFunc {
                         }
                         let new_plan =
                             Self::wrap_plan(func, args, &projection.input, &alias, ts_gen_func)?;
-                        return Ok(Transformed::Yes(new_plan));
+                        return Ok(Transformed::yes(new_plan));
                     } else {
                         return Err(datafusion::error::DataFusionError::Plan(
                             "Time-series-generation function must be used in SELECT clause"
@@ -94,7 +94,7 @@ impl TransformTimeSeriesGenFunc {
         let arg_expr = if args.len() >= 3 {
             let ext_arg = &args[args.len() - 1];
             // TODO(zipper): ext_arg is a string expression but not a literal value.
-            if !matches!(ext_arg, Some(Expr::Literal(ScalarValue::Utf8(Some(_))))) {
+            if !matches!(ext_arg, Expr::Literal(ScalarValue::Utf8(Some(_)))) {
                 return Err(datafusion::error::DataFusionError::Plan(format!(
                     "{} expects the last argument to be a string, but got {ext_arg:?}",
                     udf.name(),
@@ -107,16 +107,16 @@ impl TransformTimeSeriesGenFunc {
 
         let new_projection = Arc::new(LogicalPlan::Projection(Projection::try_new(
             vec![time_expr.clone(), field_expr.clone()],
-            Arc::new(input),
+            Arc::new(input.clone()),
         )?));
 
         let new_sort = Arc::new(LogicalPlan::Sort(Sort {
             input: new_projection,
-            expr: vec![Expr::Sort(SortExpr {
-                expr: Box::new(time_expr.clone()),
+            expr: vec![SortExpr {
+                expr: time_expr.clone(),
                 asc: true,
                 nulls_first: false,
-            })],
+            }],
             fetch: None,
         }));
 
@@ -129,8 +129,8 @@ impl TransformTimeSeriesGenFunc {
 
         Ok(LogicalPlan::Extension(Extension {
             node: Arc::new(TimeSeriesGenFuncNode {
-                time_expr,
-                field_expr,
+                time_expr: time_expr.clone(),
+                field_expr: field_expr.clone(),
                 arg_expr,
                 input: new_sort,
                 symbol,

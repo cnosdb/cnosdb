@@ -11,7 +11,7 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr};
+use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::{
@@ -89,7 +89,7 @@ impl ExecutionPlan for TagScanExec {
         &self.properties
     }
 
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         vec![]
     }
 
@@ -146,9 +146,9 @@ impl ExecutionPlan for TagScanExec {
         Ok(Box::pin(tag_scan_stream))
     }
 
-    fn statistics(&self) -> Statistics {
+    fn statistics(&self) -> Result<Statistics> {
         // TODO
-        Statistics::default()
+        Ok(Statistics::default())
     }
 
     fn metrics(&self) -> Option<datafusion::physical_plan::metrics::MetricsSet> {

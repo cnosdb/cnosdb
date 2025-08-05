@@ -31,15 +31,15 @@ impl OptimizerRule for RewriteTagScan {
             filters,
             aggregate,
             fetch,
-        }) = plan
+        }) = &plan
         {
-            if let Some(cluster_table) = source_as_provider(&source)?
+            if let Some(cluster_table) = source_as_provider(source)?
                 .as_any()
                 .downcast_ref::<ClusterTable>()
             {
                 let table_schema = cluster_table.table_schema();
                 // Only handle the table of ClusterTable
-                if let Some(e) = projection.as_ref() {
+                if let Some(e) = projection {
                     let mut contain_time = false;
                     let mut contain_tag = false;
                     let mut contain_field = false;

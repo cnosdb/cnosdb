@@ -9,7 +9,7 @@ use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
 use spi::query::datasource::stream::StreamProviderRef;
 
-#[derive(Clone, PartialOrd)]
+#[derive(Clone)]
 pub struct StreamScanPlanNode {
     /// The name of the table
     pub table_name: TableReference,
@@ -22,6 +22,28 @@ pub struct StreamScanPlanNode {
     /// Optional expressions to be used as filters by the table provider
     pub filters: Vec<Expr>,
     pub aggregate: Option<TableScanAggregate>,
+}
+
+impl PartialOrd for StreamScanPlanNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.table_name.partial_cmp(&other.table_name) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.projection.partial_cmp(&other.projection) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self
+            .projected_schema
+            .fields()
+            .partial_cmp(other.projected_schema.fields())
+        {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.filters.partial_cmp(&other.filters)
+    }
 }
 
 impl Debug for StreamScanPlanNode {

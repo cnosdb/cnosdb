@@ -50,13 +50,12 @@ impl ScalarUDFImpl for ValueFillFunc {
 
 pub fn compute(
     timestamps: &mut Vec<i64>,
-    fields: &mut [Vec<f64>],
+    fields: &mut [f64],
     arg_str: Option<&str>,
 ) -> DFResult<(Vec<i64>, Vec<f64>)> {
     let arg = get_arg(arg_str)?;
     let method = get_fill_method_from_arg(arg)?;
-    let field = std::mem::take(&mut fields[0]);
-    let mut fill = ValueFill::new(field, method)?;
+    let mut fill = ValueFill::new(fields.to_vec(), method)?;
     fill.fill()?;
     Ok((std::mem::take(timestamps), fill.into_filled_values()))
 }

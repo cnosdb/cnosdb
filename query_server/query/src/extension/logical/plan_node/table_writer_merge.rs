@@ -7,11 +7,25 @@ use datafusion::logical_expr::utils::exprlist_to_fields;
 use datafusion::logical_expr::{Extension, LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct TableWriterMergePlanNode {
     pub input: Arc<LogicalPlan>,
     pub agg_expr: Vec<Expr>,
     pub schema: DFSchemaRef,
+}
+
+impl PartialOrd for TableWriterMergePlanNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.input.partial_cmp(&other.input) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.agg_expr.partial_cmp(&other.agg_expr) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.schema.fields().partial_cmp(&other.schema.fields())
+    }
 }
 
 impl TableWriterMergePlanNode {

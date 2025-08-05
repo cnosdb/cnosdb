@@ -6,7 +6,9 @@ use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::error::Result;
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_plan::aggregates::{AggregateExec, AggregateMode, PhysicalGroupBy};
+use datafusion::physical_plan::aggregates::{
+    AggregateExec, AggregateMode, AggregateStream, PhysicalGroupBy,
+};
 use datafusion::physical_plan::metrics::MetricsSet;
 use datafusion::physical_plan::udaf::AggregateFunctionExpr;
 use datafusion::physical_plan::{

@@ -14,6 +14,7 @@
 
 //! Push Down Aggregation optimizer rule ensures that aggregations are applied as early as possible in the plan
 
+use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -27,7 +28,7 @@ use datafusion::logical_expr::{
     Aggregate, AggregateUDF, LogicalPlan, LogicalPlanBuilder, Projection,
     TableProviderAggregationPushDown, TableScan, TableScanAggregate,
 };
-use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
+use datafusion::optimizer::{ApplyOrder, OptimizerConfig, OptimizerRule};
 use datafusion::prelude::Expr;
 
 /// Push Down Aggregation optimizer rule pushes aggregation clauses down the plan
@@ -51,7 +52,7 @@ impl OptimizerRule for PushDownAggregation {
     fn rewrite(
         &self,
         plan: LogicalPlan,
-        config: &dyn OptimizerConfig,
+        _config: &dyn OptimizerConfig,
     ) -> DFResult<Transformed<LogicalPlan>> {
         if let LogicalPlan::Aggregate(Aggregate {
             input,
@@ -59,17 +60,18 @@ impl OptimizerRule for PushDownAggregation {
             aggr_expr,
             schema,
             ..
-        }) = plan
+        }) = &plan
         {
-            if !determine_whether_support_push_down(&aggr_expr) {
-                return Ok(None);
+            if !determine_whether_support_push_down(aggr_expr) {
+                return Ok(Transformed::no(plan));
             }
 
-            let mut temp_input = input;
-
-            if let LogicalPlan::Projection(Projection { input, .. }) = temp_input.deref() {
-                temp_input = input.clone();
-            }
+            let temp_input =
+                if let LogicalPlan::Projection(Projection { input, .. }) = input.as_ref() {
+                    input.clone()
+                } else {
+                    input.clone()
+                };
 
             if let LogicalPlan::TableScan(TableScan {
                 table_name,
@@ -101,19 +103,19 @@ impl OptimizerRule for PushDownAggregation {
                             let new_agg_expr_with_alias = aggr_expr
                             .iter()
                             .map(|e| {
-                                let col_name = e.display_name()?;
+                                let col_name = e.schema_name().to_string();
                                 let column = Column::from_name(col_name.clone());
 
                                 let new_expr = match e {
                                     Expr::AggregateFunction(AggregateFunction {
                                         func,
                                         params: AggregateFunctionParams {
-                                            args,
                                             distinct,
                                             filter,
                                             order_by,
                                             null_treatment,
                                             can_be_pushed_down,
+                                            ..
                                         },
                                     }) => {
                                         let new_agg_func = match func.name() {
@@ -164,23 +166,25 @@ impl OptimizerRule for PushDownAggregation {
                                     _ => return Err(DataFusionError::Internal("Invalid logical plan, Aggregate's aggr_expr contains non-aggregate expr.".to_string())),
                                 };
 
-                                let alias = Expr::Column(Column::from_name(new_expr.schema_name())).alias(col_name);
+                                let alias = Expr::Column(Column::from_name(new_expr.schema_name().to_string())).alias(col_name);
 
                                 Ok((new_expr, alias))
                             })
-                            .collect::<Result<Vec<_>>>()?;
+                            .collect::<DFResult<Vec<_>>>()?;
 
                             let (new_agg_expr, projection_agg_expr): (Vec<_>, Vec<_>) =
                                 new_agg_expr_with_alias.into_iter().unzip();
 
                             // Find distinct group by exprs in the case where we have a grouping set
-                            let mut new_required_columns = Default::default();
-                            let all_group_expr: Vec<Expr> = grouping_set_to_exprlist(&group_expr)?;
-                            exprlist_to_columns(&all_group_expr, &mut new_required_columns)?;
+                            let mut new_required_columns: HashSet<&Column> = HashSet::new();
+                            let all_group_expr: Vec<&Expr> = grouping_set_to_exprlist(&group_expr)?;
+                            all_group_expr
+                                .iter()
+                                .map(|e| e.add_column_refs(&mut new_required_columns));
 
                             let projection_expr = new_required_columns
                                 .into_iter()
-                                .map(Expr::Column)
+                                .map(|c| Expr::Column(c.clone()))
                                 .chain(projection_agg_expr)
                                 .collect::<Vec<_>>();
 
@@ -232,12 +236,18 @@ impl OptimizerRule for PushDownAggregation {
                         }
                     };
 
-                    return Ok(new_plan);
+                    if let Some(np) = new_plan {
+                        return Ok(Transformed::yes(np));
+                    }
                 }
-            };
-        };
+            }
+        }
 
-        optimize_children(self, plan, config)
+        Ok(Transformed::no(plan))
+    }
+
+    fn apply_order(&self) -> Option<ApplyOrder> {
+        Some(ApplyOrder::BottomUp)
     }
 }
 
@@ -245,23 +255,10 @@ fn determine_whether_support_push_down(aggr_expr: &[Expr]) -> bool {
     aggr_expr.iter().all(|e| match e {
         Expr::AggregateFunction(AggregateFunction {
             func,
-            params:
-                AggregateFunctionParams {
-                    args,
-                    distinct,
-                    filter,
-                    order_by,
-                    null_treatment,
-                    can_be_pushed_down,
-                },
+            params: AggregateFunctionParams { distinct, .. },
             ..
         }) => {
-            let support_agg_func = matches!(
-                func.name(),
-                "count" // | "sum"
-                        // | "min"
-                        // | "max"
-            );
+            let support_agg_func = matches!(func.name(), "count");
 
             support_agg_func && !distinct
         }

@@ -5,7 +5,7 @@ use std::time::Duration as StdDuration;
 use datafusion::arrow::datatypes::SchemaRef;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct Watermark {
     pub column: String,
     pub delay: StdDuration,

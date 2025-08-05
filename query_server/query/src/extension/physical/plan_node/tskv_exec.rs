@@ -9,7 +9,7 @@ use datafusion::arrow::datatypes::{SchemaRef, TimeUnit};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr};
+use datafusion::physical_expr::EquivalenceProperties;
 use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::{
@@ -95,7 +95,7 @@ impl ExecutionPlan for TskvExec {
         &self.properties
     }
 
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         vec![]
     }
 
@@ -156,9 +156,9 @@ impl ExecutionPlan for TskvExec {
         Ok(Box::pin(table_stream))
     }
 
-    fn statistics(&self) -> Statistics {
+    fn statistics(&self) -> DFResult<Statistics> {
         // TODO
-        Statistics::default()
+        Ok(Statistics::default())
     }
 
     fn metrics(&self) -> Option<MetricsSet> {

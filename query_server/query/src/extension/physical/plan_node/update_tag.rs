@@ -9,13 +9,13 @@ use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::{PhysicalExpr, PhysicalSortExpr};
+use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::memory::MemoryStream;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    ColumnarValue, DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, Partitioning,
-    PlanProperties, SendableRecordBatchStream, Statistics,
+    ColumnarValue, DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, PlanProperties,
+    SendableRecordBatchStream, Statistics,
 };
 use datafusion::scalar::ScalarValue;
 use futures::{StreamExt, TryStreamExt};
@@ -81,19 +81,19 @@ impl ExecutionPlan for UpdateTagExec {
     }
 
     fn properties(&self) -> &PlanProperties {
-        &self.scan.properties
+        self.scan.properties()
     }
 
     fn required_input_distribution(&self) -> Vec<Distribution> {
         vec![Distribution::SinglePartition]
     }
 
-    fn benefits_from_input_partitioning(&self) -> bool {
-        false
+    fn benefits_from_input_partitioning(&self) -> Vec<bool> {
+        vec![false]
     }
 
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
-        vec![self.scan.clone()]
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+        vec![&self.scan]
     }
 
     fn with_new_children(
@@ -134,7 +134,7 @@ impl ExecutionPlan for UpdateTagExec {
         Some(self.metrics.clone_inner())
     }
 
-    fn statistics(&self) -> Statistics {
+    fn statistics(&self) -> Result<Statistics> {
         self.scan.statistics()
     }
 }

@@ -1,11 +1,9 @@
-use std::sync::Arc;
-
 use datafusion::arrow::datatypes::{DataType, Field};
 use datafusion::error::Result as DFResult;
 use datafusion::logical_expr::function::{AccumulatorArgs, StateFieldsArgs};
 use datafusion::logical_expr::type_coercion::aggregates::{STRINGS, TIMESTAMPS};
 use datafusion::logical_expr::{
-    Accumulator, AggregateUDFImpl, Signature, TypeSignature, Volatility,
+    Accumulator, AggregateUDF, AggregateUDFImpl, Signature, TypeSignature, Volatility,
 };
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryError;
@@ -23,8 +21,8 @@ mod state_agg_data;
 const LIST_ELEMENT_NAME: &str = "item";
 
 pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<(), QueryError> {
-    func_manager.register_udaf(StageAggFunction::new(true))?;
-    func_manager.register_udaf(StageAggFunction::new(false))?;
+    func_manager.register_udaf(AggregateUDF::new_from_impl(StageAggFunction::new(true)))?;
+    func_manager.register_udaf(AggregateUDF::new_from_impl(StageAggFunction::new(false)))?;
     Ok(())
 }
 
@@ -99,6 +97,6 @@ impl AggregateUDFImpl for StageAggFunction {
             .iter()
             .map(|t| Field::new_list_field(t.clone(), true))
             .collect::<Vec<_>>();
-        Ok(Arc::new(fields))
+        Ok(fields)
     }
 }

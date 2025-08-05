@@ -9,7 +9,7 @@ use datafusion::prelude::Expr;
 use datafusion::sql::TableReference;
 use models::arrow::Field;
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ExpandNode {
     pub projections: Vec<Vec<Expr>>,
     /// The incoming logical plan
@@ -17,6 +17,24 @@ pub struct ExpandNode {
     pub expressions: Vec<Expr>,
     /// The schema description of the output
     pub schema: DFSchemaRef,
+}
+
+impl PartialOrd for ExpandNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.projections.partial_cmp(&other.projections) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.input.partial_cmp(&other.input) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.expressions.partial_cmp(&other.expressions) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.schema.fields().partial_cmp(other.schema.fields())
+    }
 }
 
 impl ExpandNode {
@@ -105,7 +123,7 @@ impl UserDefinedLogicalNodeCore for ExpandNode {
     }
 
     /// TODO [`PushDownProjection`] has no effect on this node
-    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+    fn with_exprs_and_inputs(&self, _exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
         if inputs.len() != 1 {
             return Err(DataFusionError::Plan(
                 "ExpandNode only support one input".to_string(),
@@ -230,10 +248,7 @@ mod tests {
         let end_field = expand_schema.field_with_unqualified_name("$end")?;
 
         let window_expr = Expr::ScalarVariable(
-            DataType::Struct(Fields::from(vec![
-                start_field.field().clone(),
-                end_field.field().clone(),
-            ])),
+            DataType::Struct(Fields::from(vec![start_field.clone(), end_field.clone()])),
             vec!["window".to_string()],
         );
 

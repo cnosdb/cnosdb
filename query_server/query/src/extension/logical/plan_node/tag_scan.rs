@@ -9,7 +9,7 @@ use datafusion::prelude::Expr;
 
 use crate::data_source::batch::tskv::ClusterTable;
 
-#[derive(Clone, PartialOrd)]
+#[derive(Clone)]
 pub struct TagScanPlanNode {
     /// The name of the table
     pub table_name: String,
@@ -23,6 +23,32 @@ pub struct TagScanPlanNode {
     pub filters: Vec<Expr>,
     /// Optional number of rows to read
     pub fetch: Option<usize>,
+}
+
+impl PartialOrd for TagScanPlanNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.table_name.partial_cmp(&other.table_name) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.projection.partial_cmp(&other.projection) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self
+            .projected_schema
+            .fields()
+            .partial_cmp(other.projected_schema.fields())
+        {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.filters.partial_cmp(&other.filters) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.fetch.partial_cmp(&other.fetch)
+    }
 }
 
 impl Debug for TagScanPlanNode {

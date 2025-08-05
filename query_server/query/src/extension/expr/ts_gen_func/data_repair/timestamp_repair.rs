@@ -51,13 +51,13 @@ impl ScalarUDFImpl for TimestampRepairFunc {
 
 pub fn compute(
     timestamps: &mut [i64],
-    fields: &mut [Vec<f64>],
+    fields: &mut [f64],
     arg_str: Option<&str>,
 ) -> DFResult<(Vec<i64>, Vec<f64>)> {
     let arg = get_arg(arg_str)?;
     let (interval_mode, start_mode) = get_interval_mode_and_start_mode_from_arg(&arg)?;
     let (timestamps_repaired, values_repaired) =
-        timestamps_repair(timestamps, &mut fields[0], interval_mode, start_mode);
+        timestamps_repair(timestamps, fields, interval_mode, start_mode);
     Ok((timestamps_repaired, values_repaired))
 }
 

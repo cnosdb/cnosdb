@@ -61,7 +61,7 @@ impl AddTracedProxyRewriter {
     ) -> DFResult<Transformed<Arc<dyn ExecutionPlan>>> {
         let down = self.f_down(plan)?;
         if down.transformed {
-            return self.f_up(plan);
+            return self.f_up(down.data);
         }
         let need_mutate = match down.tnr {
             TreeNodeRecursion::Stop => return Ok(down),

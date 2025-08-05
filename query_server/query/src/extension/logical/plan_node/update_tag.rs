@@ -8,7 +8,6 @@ use datafusion::logical_expr::utils::exprlist_to_fields;
 use datafusion::logical_expr::{Extension, LogicalPlan, TableSource, UserDefinedLogicalNodeCore};
 use datafusion::prelude::{Column, Expr};
 
-#[derive(PartialOrd)]
 pub struct UpdateTagPlanNode {
     pub table_name: String,
     pub table_source: Arc<dyn TableSource>,
@@ -16,6 +15,28 @@ pub struct UpdateTagPlanNode {
     pub assigns: Vec<(Column, Expr)>,
     pub schema: DFSchemaRef,
     pub exprs: Vec<Expr>,
+}
+
+impl PartialOrd for UpdateTagPlanNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.table_name.partial_cmp(&other.table_name) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.scan.partial_cmp(&other.scan) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.assigns.partial_cmp(&other.assigns) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.schema.fields().partial_cmp(other.schema.fields()) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.exprs.partial_cmp(&other.exprs)
+    }
 }
 
 impl UpdateTagPlanNode {

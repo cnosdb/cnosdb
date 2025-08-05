@@ -7,7 +7,7 @@ use models::arrow::DataType;
 
 use crate::extension::expr::TimeSeriesGenFunc;
 
-#[derive(Clone, Debug, Hash, PartialEq, PartialOrd, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct TimeSeriesGenFuncNode {
     pub time_expr: Expr,
     pub field_expr: Expr,
@@ -15,6 +15,28 @@ pub struct TimeSeriesGenFuncNode {
     pub input: Arc<LogicalPlan>,
     pub symbol: TimeSeriesGenFunc,
     pub schema: DFSchemaRef,
+}
+
+impl PartialOrd for TimeSeriesGenFuncNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.time_expr.partial_cmp(&other.time_expr) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.field_expr.partial_cmp(&other.field_expr) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.arg_expr.partial_cmp(&other.arg_expr) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.input.partial_cmp(&other.input) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.schema.fields().partial_cmp(other.schema.fields())
+    }
 }
 
 impl UserDefinedLogicalNodeCore for TimeSeriesGenFuncNode {
@@ -41,7 +63,7 @@ impl UserDefinedLogicalNodeCore for TimeSeriesGenFuncNode {
     fn fmt_for_explain(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{}: time_expr={}, field_expr={}, arg_expr={}, func={}",
+            "{}: time_expr={}, field_expr={}, arg_expr={:?}, func={}",
             self.name(),
             self.time_expr,
             self.field_expr,
@@ -53,7 +75,7 @@ impl UserDefinedLogicalNodeCore for TimeSeriesGenFuncNode {
     fn with_exprs_and_inputs(
         &self,
         mut exprs: Vec<Expr>,
-        inputs: Vec<LogicalPlan>,
+        mut inputs: Vec<LogicalPlan>,
     ) -> DFResult<Self> {
         if inputs.len() != 1 {
             return Err(DataFusionError::Plan(
@@ -63,7 +85,7 @@ impl UserDefinedLogicalNodeCore for TimeSeriesGenFuncNode {
 
         let input = inputs.remove(0);
         let arg_expr = if exprs.len() >= 3 {
-            match exprs[exprs.len() - 1].get_type(inputs.schema()) {
+            match exprs[exprs.len() - 1].get_type(input.schema()) {
                 Ok(DataType::Utf8) => exprs.pop(),
                 _ => None,
             }

@@ -35,11 +35,11 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
             // extract topk function expr, If it does not exist, return None
             extract_topk_function(&projection.expr),
         ) {
-            return Ok(Transformed::Yes(do_transform(&topk_function, projection)?));
+            return Ok(Transformed::yes(do_transform(&topk_function, projection)?));
         };
     }
 
-    Ok(Transformed::No(plan))
+    Ok(Transformed::no(plan))
 }
 
 fn do_transform(topk_function: &Expr, projection: &Projection) -> Result<LogicalPlan> {
@@ -47,14 +47,14 @@ fn do_transform(topk_function: &Expr, projection: &Projection) -> Result<Logical
 
     let (field, k) = extract_args(topk_function)?;
 
-    let sort_expr = Expr::Sort(expr::Sort {
+    let sort_expr = expr::Sort {
         // The expression to sort on
-        expr: Box::new(field.clone()),
+        expr: field.clone(),
         // The direction of the sort
         asc: false,
         // Whether to put Nulls before all other data values
         nulls_first: false,
-    });
+    };
     let topk_node = LogicalPlan::Sort(Sort {
         expr: vec![sort_expr],
         input: input.clone(),
@@ -103,10 +103,10 @@ fn extract_topk_function(exprs: &[Expr]) -> Option<Expr> {
     find_exprs_in_exprs(exprs, &|nested_expr| {
         matches!(
             nested_expr,
-            Expr::ScalarUDF(expr::ScalarFunction {
+            Expr::ScalarFunction(expr::ScalarFunction {
                 func,
                 ..
-            }) if func.name.eq_ignore_ascii_case(TOPK)
+            }) if func.name().eq_ignore_ascii_case(TOPK)
         )
     })
     .first()
@@ -114,7 +114,7 @@ fn extract_topk_function(exprs: &[Expr]) -> Option<Expr> {
 }
 
 fn extract_args(expr: &Expr) -> Result<(Expr, usize)> {
-    if let Expr::ScalarUDF(expr::ScalarFunction { func: _, args }) = expr {
+    if let Expr::ScalarFunction(expr::ScalarFunction { func: _, args }) = expr {
         if args.len() != 2 {
             return Err(DataFusionError::Plan(INVALID_ARGUMENTS.to_string()));
         }

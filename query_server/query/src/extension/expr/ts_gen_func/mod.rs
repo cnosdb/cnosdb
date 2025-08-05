@@ -41,7 +41,7 @@ impl TimeSeriesGenFunc {
     pub fn compute(
         &self,
         timestamps: &mut Vec<i64>,
-        fields: &mut [Vec<f64>],
+        fields: &mut [f64],
         arg_str: Option<&str>,
     ) -> DFResult<(Vec<i64>, Vec<f64>)> {
         match self {

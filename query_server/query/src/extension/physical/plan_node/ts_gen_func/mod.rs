@@ -152,7 +152,7 @@ impl DisplayAs for TimeSeriesGenFuncExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "TimeSeriesGenFuncExec: time_expr={}, field_expr={}, arg_expr={}, func={}",
+            "TimeSeriesGenFuncExec: time_expr={}, field_expr={}, arg_expr={:?}, func={}",
             self.time_expr,
             self.field_expr,
             self.arg_expr.as_ref().map(|expr| expr.to_string()),

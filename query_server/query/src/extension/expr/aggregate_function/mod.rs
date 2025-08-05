@@ -93,7 +93,7 @@ impl AggResult for TSPoint {
         let val_data_type = val.data_type();
 
         Ok(ScalarValue::Struct(Arc::new(StructArray::new(
-            Fields::from([
+            Fields::from(vec![
                 Field::new("ts", ts_data_type, true),
                 Field::new("val", val_data_type, true),
             ]),
@@ -138,8 +138,7 @@ fn scalar_to_points(value: ScalarValue) -> DFResult<Vec<TSPoint>> {
                 Ok(vec![])
             } else {
                 let points = list_array
-                    .values()
-                    .into_iter()
+                    .iter()
                     .map(TSPoint::try_from_scalar)
                     .collect::<DFResult<Vec<_>>>()?;
                 Ok(points)
@@ -166,7 +165,7 @@ mod tests {
 
         let expect_udaf = expect_udaf.unwrap();
 
-        let result_udaf = func_manager.udaf(&expect_udaf.name()).await;
+        let result_udaf = func_manager.udaf(&expect_udaf.name());
 
         assert!(result_udaf.is_ok(), "not get result from func manager.");
 
