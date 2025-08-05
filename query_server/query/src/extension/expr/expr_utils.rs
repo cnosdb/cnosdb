@@ -104,11 +104,11 @@ pub fn find_selector_function_exprs(exprs: &[Expr]) -> Vec<Expr> {
     find_exprs_in_exprs(exprs, &|nested_expr| {
         matches!(
             nested_expr,
-            Expr::ScalarUDF(expr::ScalarFunction {
+            Expr::ScalarFunction(expr::ScalarFunction {
                 func,
                 ..
-            }) if func.name.eq_ignore_ascii_case(BOTTOM)
-            || func.name.eq_ignore_ascii_case(TOPK)
+            }) if func.name().eq_ignore_ascii_case(BOTTOM)
+            || func.name().eq_ignore_ascii_case(TOPK)
         )
     })
 }
@@ -119,11 +119,11 @@ pub fn find_selector_function_exprs_deeply_nested(exprs: &[Expr]) -> Vec<Expr> {
     find_exprs_in_exprs_deeply_nested(exprs, &|nested_expr| {
         matches!(
             nested_expr,
-            Expr::ScalarUDF(expr::ScalarFunction {
+            Expr::ScalarFunction(expr::ScalarFunction {
                 func,
                 ..
-            }) if func.name.eq_ignore_ascii_case(BOTTOM)
-            || func.name.eq_ignore_ascii_case(TOPK)
+            }) if func.name().eq_ignore_ascii_case(BOTTOM)
+            || func.name().eq_ignore_ascii_case(TOPK)
         )
     })
 }

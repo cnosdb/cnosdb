@@ -113,8 +113,7 @@ impl GaugeData {
             return ScalarValue::try_from(self.last.val().data_type());
         }
 
-        self.delta()?
-            .div_checked(ScalarValue::from(time_delta as f64))
+        self.delta()?.div(ScalarValue::from(time_delta as f64))
     }
 }
 

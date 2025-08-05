@@ -10,10 +10,9 @@ use spi::QueryResult;
 
 use super::BOTTOM;
 
-pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<ScalarUDF> {
-    let udf = BottomFunc::new();
-    func_manager.register_udf(udf.clone())?;
-    Ok(udf)
+pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
+    func_manager.register_udf(ScalarUDF::new_from_impl(BottomFunc::new()))?;
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -57,7 +56,7 @@ impl ScalarUDFImpl for BottomFunc {
         Ok(arg_types[0].clone())
     }
 
-    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
+    fn invoke_with_args(&self, _args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
         Err(DataFusionError::Execution(format!(
             "{BOTTOM} has no specific implementation, should be converted to bottom operator.",
         )))

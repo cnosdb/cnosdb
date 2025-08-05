@@ -17,10 +17,9 @@ use crate::extension::expr::INTERVALS;
 pub static DEFAULT_TIME_WINDOW_START: Lazy<ScalarValue> =
     Lazy::new(|| ScalarValue::TimestampNanosecond(Some(0), Some("+00:00".into())));
 
-pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<ScalarUDF> {
-    let udf = TimeWindowFunc::new();
-    func_manager.register_udf(udf.clone())?;
-    Ok(udf)
+pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
+    func_manager.register_udf(ScalarUDF::new_from_impl(TimeWindowFunc::new()))?;
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -60,7 +59,7 @@ impl ScalarUDFImpl for TimeWindowFunc {
 
     fn invoke_with_args(
         &self,
-        args: datafusion::logical_expr::ScalarFunctionArgs,
+        _args: datafusion::logical_expr::ScalarFunctionArgs,
     ) -> DFResult<ColumnarValue> {
         Err(DataFusionError::Execution(format!(
             "{} has no specific implementation, should be converted to Expand operator.",
@@ -290,12 +289,10 @@ mod tests {
         slide_duration: i64,
         start_time: i64,
     ) -> (i64, i64) {
-        let window_duration: &ColumnarValue = &ColumnarValue::Scalar(
-            ScalarValue::IntervalMonthDayNano(Some(window_duration as i128)),
-        );
-        let slide_duration: &ColumnarValue = &ColumnarValue::Scalar(
-            ScalarValue::IntervalMonthDayNano(Some(slide_duration as i128)),
-        );
+        let window_duration: &ColumnarValue =
+            &ColumnarValue::Scalar(ScalarValue::DurationNanosecond(Some(window_duration)));
+        let slide_duration: &ColumnarValue =
+            &ColumnarValue::Scalar(ScalarValue::DurationNanosecond(Some(slide_duration)));
         let start_time: &ColumnarValue =
             &ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(Some(start_time), None));
 
@@ -308,12 +305,10 @@ mod tests {
         slide_duration: i64,
         start_time: i64,
     ) -> (i64, i64) {
-        let window_duration: &ColumnarValue = &ColumnarValue::Scalar(
-            ScalarValue::IntervalMonthDayNano(Some(window_duration as i128)),
-        );
-        let slide_duration: &ColumnarValue = &ColumnarValue::Scalar(
-            ScalarValue::IntervalMonthDayNano(Some(slide_duration as i128)),
-        );
+        let window_duration: &ColumnarValue =
+            &ColumnarValue::Scalar(ScalarValue::DurationNanosecond(Some(window_duration)));
+        let slide_duration: &ColumnarValue =
+            &ColumnarValue::Scalar(ScalarValue::DurationNanosecond(Some(slide_duration)));
         let start_time: &ColumnarValue =
             &ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(Some(start_time), None));
 

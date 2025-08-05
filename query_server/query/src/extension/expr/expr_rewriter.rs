@@ -21,10 +21,10 @@ where
     /// returns a potentially modified expr.
     fn f_up(&mut self, expr: Expr) -> Result<Transformed<Self::Node>> {
         if let Some(new_expr) = (self.replacer)(&expr) {
-            return Ok(new_expr);
+            return Ok(Transformed::yes(new_expr));
         }
 
-        Ok(expr)
+        Ok(Transformed::no(expr))
     }
 }
 
@@ -56,7 +56,7 @@ mod tests {
 
         let expr = expr.rewrite(&mut rewriter)?;
 
-        assert_eq!("CAST(b + Int32(1) AS Float64)", format!("{}", expr));
+        assert_eq!("CAST(b + Int32(1) AS Float64)", format!("{}", expr.data));
 
         Ok(())
     }
