@@ -13,9 +13,7 @@ use spi::query::function::FunctionMetadataManager;
 use spi::QueryError;
 
 use super::{GaugeData, TSPoint};
-use crate::extension::expr::aggregate_function::{
-    scalar_to_points, AggResult, AggState, GAUGE_AGG_UDAF_NAME,
-};
+use crate::extension::expr::aggregate_function::{scalar_to_points, AggState, GAUGE_AGG_UDAF_NAME};
 
 pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<(), QueryError> {
     func_manager.register_udaf(AggregateUDF::new_from_impl(GaugeAggFunction::new()))?;
@@ -187,8 +185,8 @@ impl Accumulator for GaugeAggAccumulator {
             .state
             .clone()
             .build()
-            .map(|e| e.into_scalar())
-            .unwrap_or(ScalarValue::try_from(&self.return_date_type))?;
+            .map(GaugeData::into_scalar)
+            .unwrap_or_else(|| ScalarValue::try_new_null(&self.return_date_type))?;
 
         trace::trace!("GaugeAggAccumulator evaluate result: {:?}", result);
 
@@ -308,10 +306,10 @@ impl AggState for GaugeDataBuilder {
 
         let num_elements = ScalarValue::from(num_elements);
 
-        let scalars = container
-            .into_iter()
-            .map(|e| e.into_scalar())
-            .collect::<DFResult<Vec<_>>>()?;
+        let mut scalars = Vec::with_capacity(container.len());
+        for p in container.into_iter() {
+            scalars.push(ScalarValue::Struct(p.try_into_array()?));
+        }
         let child_type = TSPoint::try_new_null(time_data_type, value_data_type)?.data_type()?;
         let point_list = ScalarValue::List(ScalarValue::new_list_nullable(&scalars, &child_type));
 

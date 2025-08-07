@@ -2,6 +2,7 @@ mod gauge_agg;
 
 use std::sync::Arc;
 
+use datafusion::arrow::array::{ArrayRef, StructArray, UInt64Array};
 use datafusion::arrow::datatypes::{ArrowNativeTypeOp, DataType, Field, Fields};
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
@@ -9,7 +10,7 @@ use datafusion::scalar::ScalarValue;
 use spi::query::function::FunctionMetadataManager;
 use spi::{AnalyzerSnafu, QueryError};
 
-use super::{AggResult, TSPoint};
+use super::TSPoint;
 
 pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<(), QueryError> {
     gauge_agg::register_udaf(func_manager)?;
@@ -117,7 +118,7 @@ impl GaugeData {
     }
 }
 
-impl AggResult for GaugeData {
+impl GaugeData {
     fn into_scalar(self) -> DFResult<ScalarValue> {
         let Self {
             first,
@@ -128,20 +129,19 @@ impl AggResult for GaugeData {
             ..
         } = self;
 
-        let first = first.into_scalar()?;
-        let second = second.into_scalar()?;
-        let penultimate = penultimate.into_scalar()?;
-        let last = last.into_scalar()?;
-        let num_elements = ScalarValue::from(num_elements);
+        let first = first.try_into_array()? as ArrayRef;
+        let second = second.try_into_array()? as ArrayRef;
+        let penultimate = penultimate.try_into_array()? as ArrayRef;
+        let last = last.try_into_array()? as ArrayRef;
+        let num_elements = Arc::new(UInt64Array::from(vec![num_elements])) as ArrayRef;
 
-        let first_data_type = first.data_type();
-        let second_data_type = second.data_type();
-        let penultimate_data_type = penultimate.data_type();
-        let last_data_type = last.data_type();
-        let num_elements_data_type = num_elements.data_type();
+        let first_data_type = first.data_type().clone();
+        let second_data_type = second.data_type().clone();
+        let penultimate_data_type = penultimate.data_type().clone();
+        let last_data_type = last.data_type().clone();
+        let num_elements_data_type = num_elements.data_type().clone();
 
-        Ok(ScalarValue::Struct(
-            Some(vec![first, second, penultimate, last, num_elements]),
+        Ok(ScalarValue::Struct(Arc::new(StructArray::new(
             Fields::from([
                 Arc::new(Field::new("first", first_data_type, true)),
                 Arc::new(Field::new("second", second_data_type, true)),
@@ -149,11 +149,11 @@ impl AggResult for GaugeData {
                 Arc::new(Field::new("last", last_data_type, true)),
                 Arc::new(Field::new("num_elements", num_elements_data_type, true)),
             ]),
-        ))
+            vec![first, second, penultimate, last, num_elements],
+            None,
+        ))))
     }
-}
 
-impl GaugeData {
     pub fn try_from_scalar(scalar: ScalarValue) -> DFResult<Self> {
         let valid_func = |fields: &Fields| {
             let field_names = ["first", "second", "penultimate", "last", "num_elements"];
@@ -171,34 +171,29 @@ impl GaugeData {
         };
 
         match scalar {
-            ScalarValue::Struct(Some(values), fields) => {
-                valid_func(&fields)?;
+            ScalarValue::Struct(struct_array) if struct_array.num_columns() > 0 => {
+                valid_func(struct_array.fields())?;
 
-                let first = TSPoint::try_from_scalar(values[0].clone())?;
-                let second = TSPoint::try_from_scalar(values[1].clone())?;
-                let penultimate = TSPoint::try_from_scalar(values[2].clone())?;
-                let last = TSPoint::try_from_scalar(values[3].clone())?;
-                let num_elements: u64 = values[4].clone().try_into()?;
-
-                Ok(Self {
-                    first,
-                    second,
-                    penultimate,
-                    last,
-                    num_elements,
-                })
-            }
-            ScalarValue::Struct(None, fields) => {
-                valid_func(&fields)?;
-
-                let first =
-                    TSPoint::try_from_scalar(ScalarValue::try_from(fields[0].data_type())?)?;
-                let second =
-                    TSPoint::try_from_scalar(ScalarValue::try_from(fields[1].data_type())?)?;
-                let penultimate =
-                    TSPoint::try_from_scalar(ScalarValue::try_from(fields[2].data_type())?)?;
-                let last = TSPoint::try_from_scalar(ScalarValue::try_from(fields[3].data_type())?)?;
-                let num_elements: u64 = 0;
+                let first = TSPoint::try_from_array(struct_array.column(0))?;
+                let second = TSPoint::try_from_array(struct_array.column(1))?;
+                let penultimate = TSPoint::try_from_array(struct_array.column(2))?;
+                let last = TSPoint::try_from_array(struct_array.column(3))?;
+                let num_elements_array = struct_array.column(4);
+                let num_elements = num_elements_array
+                    .as_any()
+                    .downcast_ref::<Arc<UInt64Array>>()
+                    .map(|a| a.value(0))
+                    .ok_or_else(|| {
+                        DataFusionError::External(Box::new(
+                            AnalyzerSnafu {
+                                err: format!(
+                                    "Expected UInt64Array, got {}",
+                                    num_elements_array.data_type()
+                                ),
+                            }
+                            .build(),
+                        ))
+                    })?;
 
                 Ok(Self {
                     first,
@@ -272,7 +267,7 @@ mod tests {
 
         let delta = data.time_delta().unwrap();
 
-        assert_eq!(delta, ScalarValue::IntervalDayTime(Some(1000)))
+        assert_eq!(delta, ScalarValue::DurationNanosecond(Some(1000)))
     }
 
     #[test]
@@ -296,7 +291,7 @@ mod tests {
 
         let delta = data.time_delta().unwrap();
 
-        assert_eq!(delta, ScalarValue::IntervalDayTime(Some(1)))
+        assert_eq!(delta, ScalarValue::DurationNanosecond(Some(1)))
     }
 
     #[test]
@@ -320,7 +315,7 @@ mod tests {
 
         let delta = data.time_delta().unwrap();
 
-        assert_eq!(delta, ScalarValue::IntervalMonthDayNano(Some(1000)))
+        assert_eq!(delta, ScalarValue::DurationNanosecond(Some(1000)))
     }
 
     #[test]
@@ -344,7 +339,7 @@ mod tests {
 
         let delta = data.time_delta().unwrap();
 
-        assert_eq!(delta, ScalarValue::IntervalMonthDayNano(Some(1)))
+        assert_eq!(delta, ScalarValue::DurationNanosecond(Some(1)))
     }
 
     #[test]

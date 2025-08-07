@@ -9,10 +9,9 @@ use spi::query::function::FunctionMetadataManager;
 use spi::QueryError;
 pub use state_agg_data::StateAggData;
 
-use super::AggResult;
 use crate::extension::expr::aggregate_function::state_agg::state_agg_accumulator::StateAggAccumulator;
 use crate::extension::expr::aggregate_function::{
-    COMPACT_STATE_AGG_UDAF_NAME, STATE_AGG_UDAF_NAME,
+    AggResult, COMPACT_STATE_AGG_UDAF_NAME, STATE_AGG_UDAF_NAME,
 };
 use crate::extension::expr::INTEGERS;
 mod state_agg_accumulator;
