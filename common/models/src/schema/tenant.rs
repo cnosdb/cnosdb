@@ -43,13 +43,13 @@ impl Tenant {
 #[derive(Debug, Default, Clone, Builder, Serialize, Deserialize)]
 #[builder(setter(into, strip_option), default)]
 pub struct TenantOptions {
-    ///
+    /// Descriptive notes.
     pub comment: Option<String>,
-    ///
+    /// Resource limits.
     pub limiter_config: Option<TenantLimiterConfig>,
-    ///
+    /// Delete tenant delay time.
     pub drop_after: Option<CnosDuration>,
-    ///
+    /// TODO(zipper)
     pub tenant_is_hidden: bool,
 }
 

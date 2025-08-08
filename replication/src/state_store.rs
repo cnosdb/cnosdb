@@ -106,7 +106,7 @@ impl StateStorage {
         for<'a> T: Deserialize<'a>,
     {
         if let Some(data) = self.db.get(reader, key).context(HeedSnafu)? {
-            let val = serde_json::from_slice(&data)
+            let val = serde_json::from_slice(data)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
 
             Ok(Some(val))
@@ -200,7 +200,7 @@ impl StateStorage {
             .prefix_iter(&reader, &Key::membership_list_prefix(group_id))
             .context(HeedSnafu)?;
         while let Some((key, data)) = iter.next().transpose().context(HeedSnafu)? {
-            let value = serde_json::from_slice(&data)
+            let value = serde_json::from_slice(data)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             memberships.insert(key.to_string(), value);
         }
@@ -382,7 +382,7 @@ impl StateStorage {
             .context(HeedSnafu)?;
         for pair in iter {
             let (_, data) = pair.context(HeedSnafu)?;
-            let summary: RaftNodeSummary = serde_json::from_slice(&data)
+            let summary: RaftNodeSummary = serde_json::from_slice(data)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             nodes_summary.push(summary);
         }
@@ -415,7 +415,7 @@ impl StateStorage {
         let iter = self.db.iter(&reader).unwrap();
         for pair in iter {
             let (key, val) = pair.unwrap();
-            println!("{}: {}", key, String::from_utf8_lossy(&val));
+            println!("{}: {}", key, String::from_utf8_lossy(val));
         }
     }
 }

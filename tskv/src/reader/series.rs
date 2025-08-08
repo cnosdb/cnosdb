@@ -146,9 +146,8 @@ impl SeriesReaderStream {
 
                 let mut arrays = batch.columns().to_vec();
                 for value in &self.append_column_values {
-                    let mut builder =
-                        StringBuilder::with_capacity(num_rows, value.as_bytes().len());
-                    builder.extend(std::iter::repeat(Some(value)).take(num_rows));
+                    let mut builder = StringBuilder::with_capacity(num_rows, value.len());
+                    builder.extend(std::iter::repeat_n(Some(value), num_rows));
                     let value_array = Arc::new(builder.finish());
                     arrays.push(value_array);
                 }

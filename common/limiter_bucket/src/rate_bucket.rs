@@ -78,7 +78,7 @@ impl<'de> Deserialize<'de> for RateBucket {
                 D: Deserializer<'de>,
             {
                 struct FieldVisitor;
-                impl<'de> Visitor<'de> for FieldVisitor {
+                impl Visitor<'_> for FieldVisitor {
                     type Value = Field;
                     fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
                         formatter.write_str("`refill` or `interval` or `max` or `critical`")

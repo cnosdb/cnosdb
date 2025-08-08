@@ -348,7 +348,7 @@ impl ToDDLSql for ExternalTableSchema {
                 );
             }
             sql.truncate(sql.len() - 2); // remove last ", "
-            sql.push_str(")");
+            sql.push(')');
         }
 
         sql.push_str(" stored as ");

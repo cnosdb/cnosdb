@@ -11,7 +11,7 @@ use spi::QueryResult;
 use super::INTERPOLATE;
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
-    func_manager.register_udf(ScalarUDF::new_from_impl(InterpolateFunc::new()))?;
+    func_manager.register_udf(ScalarUDF::new_from_impl(InterpolateFunc::default()))?;
     Ok(())
 }
 
@@ -20,8 +20,8 @@ pub struct InterpolateFunc {
     signature: Signature,
 }
 
-impl InterpolateFunc {
-    pub fn new() -> Self {
+impl Default for InterpolateFunc {
+    fn default() -> Self {
         let signatures = NUMERICS
             .iter()
             .map(|t| TypeSignature::Exact(vec![t.clone()]))

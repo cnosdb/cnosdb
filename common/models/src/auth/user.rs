@@ -143,18 +143,13 @@ impl Identifier<Oid> for UserDesc {
 #[derive(Debug, Default, Clone, Builder, Serialize, Deserialize)]
 #[builder(setter(into, strip_option), default)]
 pub struct UserOptions {
-    ///
     hash_password: Option<String>,
-    ///
     #[serde(skip_serializing_if = "Option::is_none")]
     must_change_password: Option<bool>,
-    ///
     #[serde(skip_serializing_if = "Option::is_none")]
     rsa_public_key: Option<String>,
-    ///
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
-    ///
     #[serde(skip_serializing_if = "Option::is_none")]
     granted_admin: Option<bool>,
 }
@@ -312,7 +307,7 @@ impl<'a> From<&'a UserOptions> for AuthType<'a> {
     }
 }
 
-impl<'a> AuthType<'a> {
+impl AuthType<'_> {
     pub fn access_check(&self, user_info: &UserInfo) -> AuthResult<()> {
         let user_name = user_info.user.as_str();
         let password = user_info.password.as_str();

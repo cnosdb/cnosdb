@@ -228,7 +228,7 @@ impl<'a> Column<'a> {
     }
 }
 
-impl<'a> Display for Points<'a> {
+impl Display for Points<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "==============================")?;
         writeln!(f, "Database: {}", self.db_ext().unwrap_or("{!BAD_DB_NAME}"))?;
@@ -254,7 +254,7 @@ impl<'a> Display for Points<'a> {
     }
 }
 
-impl<'a> Display for Table<'a> {
+impl Display for Table<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let columns = match self.columns_iter_ext() {
             Ok(p) => p,

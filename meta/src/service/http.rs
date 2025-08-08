@@ -125,11 +125,11 @@ mod http_api {
     // curl -XPOST http://127.0.0.1:8901/dump --o ./meta_dump.data
     // curl -XPOST http://127.0.0.1:8901/restore --data-binary "@./meta_dump.data"
     async fn dump(State(HttpServer { storage, .. }): State<HttpServer>) -> (StatusCode, String) {
-        match storage.write().await.backup().map_err(MetaError::from) {
+        match storage.write().await.backup() {
             Ok(data) => {
                 let mut buf = String::with_capacity(8 * data.map.len());
                 for (key, val) in data.map.iter() {
-                    write!(&mut buf, "{key}: {val}\n").unwrap();
+                    writeln!(&mut buf, "{key}: {val}").unwrap();
                 }
                 (StatusCode::OK, buf)
             }

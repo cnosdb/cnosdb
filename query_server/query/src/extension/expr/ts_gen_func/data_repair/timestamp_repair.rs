@@ -13,8 +13,8 @@ pub struct TimestampRepairFunc {
     signature: Signature,
 }
 
-impl TimestampRepairFunc {
-    pub fn new() -> Self {
+impl Default for TimestampRepairFunc {
+    fn default() -> Self {
         Self {
             signature: full_signatures(),
         }

@@ -32,8 +32,8 @@ pub struct FirstFunc {
     signature: Signature,
 }
 
-impl FirstFunc {
-    pub fn new() -> Self {
+impl Default for FirstFunc {
+    fn default() -> Self {
         // first(
         //     time TIMESTAMP,
         //     value ANY
@@ -86,7 +86,7 @@ impl AggregateUDFImpl for FirstFunc {
 }
 
 fn new() -> AggregateUDF {
-    AggregateUDF::new_from_impl(FirstFunc::new())
+    AggregateUDF::new_from_impl(FirstFunc::default())
 }
 
 #[derive(Debug)]

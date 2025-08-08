@@ -15,8 +15,8 @@ pub struct ValueRepairFunc {
     signature: Signature,
 }
 
-impl ValueRepairFunc {
-    pub fn new() -> Self {
+impl Default for ValueRepairFunc {
+    fn default() -> Self {
         Self {
             signature: full_signatures(),
         }

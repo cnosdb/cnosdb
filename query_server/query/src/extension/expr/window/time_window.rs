@@ -18,7 +18,7 @@ pub static DEFAULT_TIME_WINDOW_START: Lazy<ScalarValue> =
     Lazy::new(|| ScalarValue::TimestampNanosecond(Some(0), Some("+00:00".into())));
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
-    func_manager.register_udf(ScalarUDF::new_from_impl(TimeWindowFunc::new()))?;
+    func_manager.register_udf(ScalarUDF::new_from_impl(TimeWindowFunc::default()))?;
     Ok(())
 }
 
@@ -27,8 +27,8 @@ pub struct TimeWindowFunc {
     signature: Signature,
 }
 
-impl TimeWindowFunc {
-    pub fn new() -> Self {
+impl Default for TimeWindowFunc {
+    fn default() -> Self {
         Self {
             signature: signature(),
         }

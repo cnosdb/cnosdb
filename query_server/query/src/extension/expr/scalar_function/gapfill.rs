@@ -10,7 +10,7 @@ use super::super::time_window_signature;
 use super::TIME_WINDOW_GAPFILL;
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
-    func_manager.register_udf(ScalarUDF::new_from_impl(TimeWindowGapFillFunc::new()))?;
+    func_manager.register_udf(ScalarUDF::new_from_impl(TimeWindowGapFillFunc::default()))?;
     Ok(())
 }
 
@@ -19,8 +19,8 @@ pub struct TimeWindowGapFillFunc {
     signature: Signature,
 }
 
-impl TimeWindowGapFillFunc {
-    pub fn new() -> Self {
+impl Default for TimeWindowGapFillFunc {
+    fn default() -> Self {
         // TIME_WINDOW_GAPFILL should have the same signature as DATE_BIN,
         // so that just adding _GAPFILL can turn a query into a gap-filling query.
         let mut signatures = time_window_signature();

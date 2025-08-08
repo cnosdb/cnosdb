@@ -100,7 +100,8 @@ pub enum CoordinatorError {
     #[snafu(display("Invalid flatbuffers: {}", source))]
     #[error_code(code = 10)]
     InvalidFlatbuffer {
-        source: InvalidFlatbuffer,
+        #[snafu(source(from(flatbuffers::InvalidFlatbuffer, Box::new)))]
+        source: Box<InvalidFlatbuffer>,
         #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,

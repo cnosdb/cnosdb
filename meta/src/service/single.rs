@@ -83,7 +83,6 @@ mod http_api {
     use axum::{routing, Router};
 
     use super::{process_watch, SingleServer};
-    use crate::error::MetaError;
     use crate::store::command::{ReadCommand, WriteCommand};
     use crate::store::dump::dump_impl;
 
@@ -140,11 +139,11 @@ mod http_api {
     async fn dump(
         State(SingleServer { storage, .. }): State<SingleServer>,
     ) -> (StatusCode, String) {
-        match storage.write().await.backup().map_err(MetaError::from) {
+        match storage.write().await.backup() {
             Ok(data) => {
                 let mut buf = String::with_capacity(8 * data.map.len());
                 for (key, val) in data.map.iter() {
-                    write!(&mut buf, "{key}: {val}\n").unwrap();
+                    writeln!(&mut buf, "{key}: {val}").unwrap();
                 }
                 (StatusCode::OK, buf)
             }

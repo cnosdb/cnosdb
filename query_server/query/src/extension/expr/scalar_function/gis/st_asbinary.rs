@@ -12,7 +12,7 @@ use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
-    func_manager.register_udf(ScalarUDF::new_from_impl(StAsBinaryFunc::new()))?;
+    func_manager.register_udf(ScalarUDF::new_from_impl(StAsBinaryFunc::default()))?;
     Ok(())
 }
 
@@ -21,8 +21,8 @@ pub struct StAsBinaryFunc {
     signature: Signature,
 }
 
-impl StAsBinaryFunc {
-    pub fn new() -> Self {
+impl Default for StAsBinaryFunc {
+    fn default() -> Self {
         Self {
             signature: Signature::exact(vec![DataType::Utf8], Volatility::Immutable),
         }

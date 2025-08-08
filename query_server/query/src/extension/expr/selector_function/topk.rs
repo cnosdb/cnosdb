@@ -11,7 +11,7 @@ use spi::QueryResult;
 use super::TOPK;
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
-    func_manager.register_udf(ScalarUDF::new_from_impl(TopKFunc::new()))?;
+    func_manager.register_udf(ScalarUDF::new_from_impl(TopKFunc::default()))?;
     Ok(())
 }
 
@@ -20,8 +20,8 @@ pub struct TopKFunc {
     signature: Signature,
 }
 
-impl TopKFunc {
-    pub fn new() -> Self {
+impl Default for TopKFunc {
+    fn default() -> Self {
         // Accept any numeric value paired with a Int64 k
         let type_signatures = STRINGS
             .iter()

@@ -10,11 +10,11 @@ use strum_macros::EnumIter;
 
 pub fn register_all_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
     func_manager.register_udf(ScalarUDF::new_from_impl(
-        timestamp_repair::TimestampRepairFunc::new(),
+        timestamp_repair::TimestampRepairFunc::default(),
     ))?;
-    func_manager.register_udf(ScalarUDF::new_from_impl(value_fill::ValueFillFunc::new()))?;
+    func_manager.register_udf(ScalarUDF::new_from_impl(value_fill::ValueFillFunc::default()))?;
     func_manager.register_udf(ScalarUDF::new_from_impl(
-        value_repair::ValueRepairFunc::new(),
+        value_repair::ValueRepairFunc::default(),
     ))
 }
 

@@ -24,8 +24,8 @@ pub struct ModeFunc {
     signature: Signature,
 }
 
-impl ModeFunc {
-    pub fn new() -> Self {
+impl Default for ModeFunc {
+    fn default() -> Self {
         Self {
             signature: Signature::any(1, Volatility::Immutable),
         }
@@ -56,7 +56,7 @@ impl AggregateUDFImpl for ModeFunc {
 }
 
 fn new() -> AggregateUDF {
-    AggregateUDF::new_from_impl(ModeFunc::new())
+    AggregateUDF::new_from_impl(ModeFunc::default())
 }
 
 #[derive(Debug)]

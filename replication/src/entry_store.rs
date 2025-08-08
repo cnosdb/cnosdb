@@ -42,7 +42,7 @@ impl HeedEntryStorage {
     async fn first_entry(&mut self) -> ReplicationResult<Option<Entry<TypeConfig>>> {
         let reader = self.env.read_txn().context(HeedSnafu)?;
         if let Some((_, data)) = self.db.first(&reader).context(HeedSnafu)? {
-            let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)
+            let entry = bincode::deserialize::<Entry<TypeConfig>>(data)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             Ok(Some(entry))
         } else {
@@ -74,7 +74,7 @@ impl EntryStorage for HeedEntryStorage {
     async fn last_entry(&mut self) -> ReplicationResult<Option<Entry<TypeConfig>>> {
         let reader = self.env.read_txn().context(HeedSnafu)?;
         if let Some((_, data)) = self.db.last(&reader).context(HeedSnafu)? {
-            let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)
+            let entry = bincode::deserialize::<Entry<TypeConfig>>(data)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             Ok(Some(entry))
         } else {
@@ -85,7 +85,7 @@ impl EntryStorage for HeedEntryStorage {
     async fn entry(&mut self, index: u64) -> ReplicationResult<Option<Entry<TypeConfig>>> {
         let reader = self.env.read_txn().context(HeedSnafu)?;
         if let Some(data) = self.db.get(&reader, &index).context(HeedSnafu)? {
-            let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)
+            let entry = bincode::deserialize::<Entry<TypeConfig>>(data)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             Ok(Some(entry))
         } else {
@@ -102,7 +102,7 @@ impl EntryStorage for HeedEntryStorage {
         for pair in iter {
             let (_, data) = pair.context(HeedSnafu)?;
             ents.push(
-                bincode::deserialize::<Entry<TypeConfig>>(&data)
+                bincode::deserialize::<Entry<TypeConfig>>(data)
                     .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?,
             );
         }

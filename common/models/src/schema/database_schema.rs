@@ -102,9 +102,11 @@ pub fn split_owner(owner: &str) -> (&str, &str) {
     owner
         .find('.')
         .map(|index| {
-            (index < owner.len())
-                .then(|| (&owner[..index], &owner[(index + 1)..]))
-                .unwrap_or((owner, ""))
+            if index < owner.len() {
+                (&owner[..index], &owner[(index + 1)..])
+            } else {
+                (owner, "")
+            }
         })
         .unwrap_or_default()
 }
@@ -166,13 +168,13 @@ impl DatabaseOptionsBuilder {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseOptions {
-    ///
+    /// Data expiration time.
     ttl: CnosDuration,
-    ///
+    /// The number of shards.
     shard_num: u64,
-    ///
+    /// The time window length of the data in shard.
     vnode_duration: CnosDuration,
-    ///
+    /// The number of replicas of the data in the cluster.
     replica: u64,
 }
 
@@ -384,19 +386,20 @@ impl DatabaseConfigBuilder {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseConfig {
-    ///
+    /// The timestamp precision of the database.
     precision: Precision,
-    ///
+    ///  The maximum cache size of the database.
     max_memcache_size: u64,
-    ///
+    /// The cache partition number of the database.
     memcache_partitions: u64,
-    ///
+    /// The maximum size of a single WAL file.
     wal_max_file_size: u64,
-    ///
+    /// Whether WAL is synchronized every time it is written.
     wal_sync: bool,
-    ///
+    /// Whether to enable strict writing,
+    /// that is, whether writing requires pre-creation of the table.
     strict_write: bool,
-    ///
+    /// Maximum buffer TSM reader for vnode.
     max_cache_readers: u64,
 }
 
@@ -480,7 +483,7 @@ impl DatabaseConfig {
             &mut did_write,
             true,
             "max_memcache_size",
-            &CnosByteNumber::format_bytes_num(self.max_memcache_size),
+            CnosByteNumber::format_bytes_num(self.max_memcache_size),
         );
         write_sql_with_option(
             buf,
@@ -494,7 +497,7 @@ impl DatabaseConfig {
             &mut did_write,
             true,
             "wal_max_file_size",
-            &CnosByteNumber::format_bytes_num(self.wal_max_file_size),
+            CnosByteNumber::format_bytes_num(self.wal_max_file_size),
         );
         write_sql_with_option(buf, &mut did_write, true, "wal_sync", self.wal_sync);
         write_sql_with_option(buf, &mut did_write, true, "strict_write", self.strict_write);

@@ -47,9 +47,9 @@ pub enum RequestBody {
 /// - `"-- #HTTP_PORT = 8086"` returns `"8086"`
 /// - `"-- #HTTP_PORT = 8086 -- comment_0"` returns `"8086"`
 /// - `"SELECT * FROM tbl_a"` returns error
-pub fn instruction_parse_str<'a>(
-    instruction_name: &'a str,
-) -> impl Parser<&'a str, Output = &'a str, Error = nom::error::Error<&'a str>> {
+pub fn instruction_parse_str(
+    instruction_name: &str,
+) -> impl Parser<&str, Output = &str, Error = nom::error::Error<&str>> {
     delimited(
         (
             tag("--"),
@@ -66,9 +66,9 @@ pub fn instruction_parse_str<'a>(
 }
 
 /// Parse an instruction with a identity value (`[a-zA-Z_][a-zA-Z0-9_]*`).
-pub fn instruction_parse_identity<'a>(
-    instruction_name: &'a str,
-) -> impl Parser<&'a str, Output = &'a str, Error = NomError<&'a str>> {
+pub fn instruction_parse_identity(
+    instruction_name: &str,
+) -> impl Parser<&str, Output = &str, Error = NomError<&str>> {
     map_parser(
         instruction_parse_str(instruction_name),
         recognize(pair(
@@ -79,9 +79,9 @@ pub fn instruction_parse_identity<'a>(
 }
 
 /// Parse an instruction with a value and convert it to a type.
-pub fn instruction_parse_to<'a, T: FromStr>(
-    instruction_name: &'a str,
-) -> impl Parser<&'a str, Output = T, Error = NomError<&'a str>> {
+pub fn instruction_parse_to<T: FromStr>(
+    instruction_name: &str,
+) -> impl Parser<&str, Output = T, Error = NomError<&str>> {
     map_res(instruction_parse_str(instruction_name), |s: &str| {
         s.parse::<T>()
     })

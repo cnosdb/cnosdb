@@ -233,7 +233,7 @@ struct ColumnVisitor {
     has_col_not_in_file: bool,
 }
 
-impl<'a> TreeNodeVisitor<'a> for ColumnVisitor {
+impl TreeNodeVisitor<'_> for ColumnVisitor {
     type Node = Arc<dyn PhysicalExpr>;
 
     fn f_down(&mut self, node: &Self::Node) -> datafusion::common::Result<TreeNodeRecursion> {

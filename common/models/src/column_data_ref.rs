@@ -10,7 +10,7 @@ pub struct ColumnDataRef<'a> {
     pub primary_data: PrimaryColumnDataRef<'a>,
 }
 
-impl<'a> Clone for ColumnDataRef<'a> {
+impl Clone for ColumnDataRef<'_> {
     fn clone(&self) -> Self {
         let values = self.valid.as_slice();
         let len = self.valid.len();
@@ -24,7 +24,7 @@ impl<'a> Clone for ColumnDataRef<'a> {
     }
 }
 
-impl<'a> PartialEq for ColumnDataRef<'a> {
+impl PartialEq for ColumnDataRef<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.valid.as_slice() == other.valid.as_slice()
             && self.valid.len() == other.valid.len()
@@ -185,7 +185,7 @@ pub enum PrimaryColumnDataRef<'a> {
     Bool(Vec<bool>, bool, bool),
 }
 
-impl<'a> PrimaryColumnDataRef<'a> {
+impl PrimaryColumnDataRef<'_> {
     pub fn physical_dtype(&self) -> PhysicalDType {
         match self {
             PrimaryColumnDataRef::F64(..) => PhysicalDType::Float,

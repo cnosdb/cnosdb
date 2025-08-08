@@ -11,7 +11,7 @@ use spi::QueryResult;
 use super::BOTTOM;
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
-    func_manager.register_udf(ScalarUDF::new_from_impl(BottomFunc::new()))?;
+    func_manager.register_udf(ScalarUDF::new_from_impl(BottomFunc::default()))?;
     Ok(())
 }
 
@@ -20,8 +20,8 @@ pub struct BottomFunc {
     signature: Signature,
 }
 
-impl BottomFunc {
-    pub fn new() -> Self {
+impl Default for BottomFunc {
+    fn default() -> Self {
         // Accept any numeric value paired with a Int64 k
         let type_signatures = STRINGS
             .iter()

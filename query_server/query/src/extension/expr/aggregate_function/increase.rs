@@ -25,8 +25,8 @@ pub struct IncreaseFunc {
     signature: Signature,
 }
 
-impl IncreaseFunc {
-    pub fn new() -> Self {
+impl Default for IncreaseFunc {
+    fn default() -> Self {
         // increase(
         //     time TIMESTAMP,
         //     value NUMERICS order by time
@@ -74,7 +74,7 @@ impl AggregateUDFImpl for IncreaseFunc {
 }
 
 fn new() -> AggregateUDF {
-    AggregateUDF::new_from_impl(IncreaseFunc::new())
+    AggregateUDF::new_from_impl(IncreaseFunc::default())
 }
 
 #[derive(Debug)]

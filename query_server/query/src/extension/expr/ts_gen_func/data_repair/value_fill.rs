@@ -12,8 +12,8 @@ pub struct ValueFillFunc {
     signature: Signature,
 }
 
-impl ValueFillFunc {
-    pub fn new() -> Self {
+impl Default for ValueFillFunc {
+    fn default() -> Self {
         Self {
             signature: full_signatures(),
         }

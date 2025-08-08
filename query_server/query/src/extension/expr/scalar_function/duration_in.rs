@@ -15,7 +15,7 @@ use crate::extension::expr::scalar_function::DURATION_IN;
 use crate::extension::expr::INTERVALS;
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
-    func_manager.register_udf(ScalarUDF::new_from_impl(DurationInFunc::new()))?;
+    func_manager.register_udf(ScalarUDF::new_from_impl(DurationInFunc::default()))?;
     Ok(())
 }
 
@@ -24,8 +24,8 @@ pub struct DurationInFunc {
     signature: Signature,
 }
 
-impl DurationInFunc {
-    pub fn new() -> Self {
+impl Default for DurationInFunc {
+    fn default() -> Self {
         let signature = vec![
             TypeSignature::Any(2),
             TypeSignature::Any(3),

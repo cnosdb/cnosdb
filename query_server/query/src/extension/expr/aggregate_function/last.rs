@@ -32,8 +32,8 @@ pub struct LastFunc {
     signature: Signature,
 }
 
-impl LastFunc {
-    pub fn new() -> Self {
+impl Default for LastFunc {
+    fn default() -> Self {
         // last(
         //     time TIMESTAMP,
         //     value ANY
@@ -86,7 +86,7 @@ impl AggregateUDFImpl for LastFunc {
 }
 
 fn new() -> AggregateUDF {
-    AggregateUDF::new_from_impl(LastFunc::new())
+    AggregateUDF::new_from_impl(LastFunc::default())
 }
 
 #[derive(Debug)]

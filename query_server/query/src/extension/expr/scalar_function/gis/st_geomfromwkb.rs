@@ -12,7 +12,7 @@ use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
-    func_manager.register_udf(ScalarUDF::new_from_impl(StGeoFromWkbFunc::new()))?;
+    func_manager.register_udf(ScalarUDF::new_from_impl(StGeoFromWkbFunc::default()))?;
     Ok(())
 }
 
@@ -21,8 +21,8 @@ pub struct StGeoFromWkbFunc {
     signature: Signature,
 }
 
-impl StGeoFromWkbFunc {
-    pub fn new() -> Self {
+impl Default for StGeoFromWkbFunc {
+    fn default() -> Self {
         Self {
             signature: Signature::exact(vec![DataType::Binary], Volatility::Immutable),
         }

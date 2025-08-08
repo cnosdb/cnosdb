@@ -37,7 +37,8 @@ pub enum TskvError {
     #[snafu(display("Invalid flatbuffers: {}", source))]
     #[error_code(code = 1)]
     InvalidFlatbuffer {
-        source: flatbuffers::InvalidFlatbuffer,
+        #[snafu(source(from(flatbuffers::InvalidFlatbuffer, Box::new)))]
+        source: Box<flatbuffers::InvalidFlatbuffer>,
         #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,

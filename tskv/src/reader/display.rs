@@ -17,7 +17,7 @@ impl<'a> DisplayableBatchReader<'a> {
         struct Wrapper<'a> {
             reader: &'a dyn BatchReader,
         }
-        impl<'a> fmt::Display for Wrapper<'a> {
+        impl fmt::Display for Wrapper<'_> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let mut visitor = IndentVisitor { f, indent: 0 };
                 visitor::accept(self.reader, &mut visitor)
@@ -33,7 +33,7 @@ struct IndentVisitor<'a, 'b> {
     indent: usize,
 }
 
-impl<'a, 'b> BatchReaderVisitor for IndentVisitor<'a, 'b> {
+impl BatchReaderVisitor for IndentVisitor<'_, '_> {
     type Error = fmt::Error;
     fn pre_visit(&mut self, reader: &dyn BatchReader) -> Result<bool, Self::Error> {
         write!(self.f, "{:indent$}", "", indent = self.indent * 2)?;

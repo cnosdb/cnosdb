@@ -337,7 +337,7 @@ impl TimeRangeProvider for DataReference {
 #[derive(Debug)]
 pub struct ProjectSchemaDisplay<'a>(pub &'a SchemaRef);
 
-impl<'a> fmt::Display for ProjectSchemaDisplay<'a> {
+impl fmt::Display for ProjectSchemaDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let parts: Vec<_> = self
             .0

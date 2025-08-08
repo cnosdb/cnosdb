@@ -24,7 +24,7 @@ pub(crate) const NUM_SHARDS: usize = 1 << NUM_SHARD_BITS;
 
 pub(crate) fn per_shard(capacity: usize, shard_len: usize) -> NonZeroUsize {
     // FIXME: Cannot set a precise capacity freely (such as 1000, will be 63 * 16)
-    let per_shard = (capacity + (shard_len - 1)) / shard_len;
+    let per_shard = capacity.div_ceil(shard_len);
     NonZeroUsize::new(per_shard).unwrap_or(unsafe { NonZeroUsize::new_unchecked(1) })
 }
 

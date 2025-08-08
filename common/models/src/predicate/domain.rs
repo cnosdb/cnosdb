@@ -1000,7 +1000,7 @@ impl Display for ValueEntry {
 
 struct ValueEntryVisitor;
 
-impl<'de> Visitor<'de> for ValueEntryVisitor {
+impl Visitor<'_> for ValueEntryVisitor {
     type Value = ValueEntry;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -1645,7 +1645,7 @@ impl<'de> Deserialize<'de> for PhysicalExprNodeWrap {
         D: Deserializer<'de>,
     {
         struct BytesVisit;
-        impl<'de> Visitor<'de> for BytesVisit {
+        impl Visitor<'_> for BytesVisit {
             type Value = PhysicalExprNode;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {

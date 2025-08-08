@@ -11,7 +11,7 @@ use spi::QueryResult;
 use super::EXACT_COUNT_UDAF_NAME;
 
 pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
-    func_manager.register_udaf(AggregateUDF::new_from_impl(ExactCountFunc::new()))?;
+    func_manager.register_udaf(AggregateUDF::new_from_impl(ExactCountFunc::default()))?;
     Ok(())
 }
 
@@ -20,8 +20,8 @@ pub struct ExactCountFunc {
     signature: Signature,
 }
 
-impl ExactCountFunc {
-    pub fn new() -> Self {
+impl Default for ExactCountFunc {
+    fn default() -> Self {
         Self {
             signature: Count::new().signature().clone(),
         }

@@ -430,8 +430,7 @@ impl TskvTableSchema {
         self.columns
             .iter()
             .find(|column| column.column_type.is_time())
-            .map(|column| column.column_type.precision())
-            .flatten()
+            .and_then(|column| column.column_type.precision())
             .unwrap_or(Precision::NS)
     }
 
@@ -482,7 +481,7 @@ impl TskvTableSchema {
             .count()
     }
 
-    pub fn cuont_schema_size(&self) -> usize {
+    pub fn count_schema_size(&self) -> usize {
         let mut size = 0;
         for i in self.columns.iter() {
             size += size_of_val(i);
@@ -819,7 +818,7 @@ impl ColumnType {
     pub fn to_physical_type(&self) -> PhysicalCType {
         match self {
             Self::Tag => PhysicalCType::Tag,
-            Self::Time(unit) => PhysicalCType::Time(unit.clone()),
+            Self::Time(unit) => PhysicalCType::Time(*unit),
             Self::Field(value_type) => PhysicalCType::Field(value_type.to_physical_type()),
         }
     }

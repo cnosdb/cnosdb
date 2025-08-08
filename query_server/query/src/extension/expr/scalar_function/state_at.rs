@@ -12,7 +12,7 @@ use crate::extension::expr::aggregate_function::StateAggData;
 use crate::extension::expr::scalar_function::STATE_AT;
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
-    let udf = ScalarUDF::new_from_impl(StateAtFunc::new());
+    let udf = ScalarUDF::new_from_impl(StateAtFunc::default());
     func_manager.register_udf(udf)?;
     Ok(())
 }
@@ -22,8 +22,8 @@ pub struct StateAtFunc {
     signature: Signature,
 }
 
-impl StateAtFunc {
-    pub fn new() -> Self {
+impl Default for StateAtFunc {
+    fn default() -> Self {
         Self {
             signature: Signature::any(2, Volatility::Immutable),
         }

@@ -151,7 +151,8 @@ pub enum QueryError {
     #[snafu(display("Invalid flatbuffers: {}", source))]
     #[error_code(code = 17)]
     InvalidFlatbuffer {
-        source: flatbuffers::InvalidFlatbuffer,
+        #[snafu(source(from(flatbuffers::InvalidFlatbuffer, Box::new)))]
+        source: Box<flatbuffers::InvalidFlatbuffer>,
         #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,

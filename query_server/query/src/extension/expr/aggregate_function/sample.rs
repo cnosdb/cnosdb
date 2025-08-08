@@ -34,8 +34,8 @@ pub struct SampleFunc {
     signature: Signature,
 }
 
-impl SampleFunc {
-    pub fn new() -> Self {
+impl Default for SampleFunc {
+    fn default() -> Self {
         let type_signatures = STRINGS
             .iter()
             .chain(NUMERICS.iter())
@@ -87,7 +87,7 @@ impl AggregateUDFImpl for SampleFunc {
 }
 
 fn new() -> AggregateUDF {
-    AggregateUDF::new_from_impl(SampleFunc::new())
+    AggregateUDF::new_from_impl(SampleFunc::default())
 }
 
 /// Intermediate state data + number of samples

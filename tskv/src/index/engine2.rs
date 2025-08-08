@@ -75,7 +75,7 @@ impl IndexEngine2 {
             .get(writer, key)
             .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?
         {
-            let value = roaring::RoaringBitmap::deserialize_from(&*data)
+            let value = roaring::RoaringBitmap::deserialize_from(data)
                 .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
             let value = value.bitor(rb);
@@ -234,7 +234,7 @@ impl IndexEngine2 {
         let mut bitmap = roaring::RoaringBitmap::new();
         for val in iter {
             let val = val.map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
-            let rb = RoaringBitmap::deserialize_from(&*val.1).context(RoaringBitmapSnafu)?;
+            let rb = RoaringBitmap::deserialize_from(val.1).context(RoaringBitmapSnafu)?;
             bitmap = bitmap.bitor(rb);
         }
 
@@ -256,7 +256,7 @@ impl IndexEngine2 {
                 .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
             for val in it {
                 let val = val.map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
-                let rb = RoaringBitmap::deserialize_from(&*val.1).context(RoaringBitmapSnafu)?;
+                let rb = RoaringBitmap::deserialize_from(val.1).context(RoaringBitmapSnafu)?;
                 bitmap = bitmap.bitor(rb);
             }
         } else {

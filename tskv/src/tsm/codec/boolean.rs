@@ -27,7 +27,7 @@ pub fn bool_bitpack_encode(src: &[bool], dst: &mut Vec<u8>) -> Result<(), CodecE
     }
     dst.push(Encoding::BitPack as u8);
 
-    let size = HEADER_LEN + 8 + ((src.len() + 7) / 8); // Header + Num bools + bool data.
+    let size = HEADER_LEN + 8 + src.len().div_ceil(8); // Header + Num bools + bool data.
     dst.resize(size + 1, 0);
 
     // Store the encoding type in the 4 high bits of the first byte

@@ -9,7 +9,7 @@ use spi::QueryResult;
 use super::LOCF;
 
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
-    func_manager.register_udf(ScalarUDF::new_from_impl(LocfFunc::new()))?;
+    func_manager.register_udf(ScalarUDF::new_from_impl(LocfFunc::default()))?;
     Ok(())
 }
 
@@ -18,8 +18,8 @@ pub struct LocfFunc {
     signature: Signature,
 }
 
-impl LocfFunc {
-    pub fn new() -> Self {
+impl Default for LocfFunc {
+    fn default() -> Self {
         Self {
             signature: Signature::any(1, Volatility::Volatile),
         }

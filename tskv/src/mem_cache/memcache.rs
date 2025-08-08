@@ -341,7 +341,7 @@ pub(crate) mod test {
         put_none: bool,
     ) {
         let mut rows = OrderedRowsData::new();
-        let mut size: usize = schema.cuont_schema_size();
+        let mut size: usize = schema.count_schema_size();
         for ts in time_range.0..=time_range.1 {
             let mut fields = Vec::new();
             for _ in 0..schema.columns().len() {

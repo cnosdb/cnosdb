@@ -50,7 +50,7 @@ where
         vec: &'a mut Vec<T>,
     }
 
-    impl<'a, T> Drop for FillGapOnDrop<'a, T> {
+    impl<T> Drop for FillGapOnDrop<'_, T> {
         fn drop(&mut self) {
             /* This code gets executed when `same_bucket` panics */
 

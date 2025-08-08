@@ -62,8 +62,8 @@ pub struct TableWriteFunc {
     signature: Signature,
 }
 
-impl TableWriteFunc {
-    pub fn new() -> Self {
+impl Default for TableWriteFunc {
+    fn default() -> Self {
         Self {
             signature: Signature::variadic(
                 STRINGS
@@ -104,7 +104,7 @@ impl ScalarUDFImpl for TableWriteFunc {
 
 lazy_static! {
     static ref TABLE_WRITE_UDF: Arc<ScalarUDF> =
-        Arc::new(ScalarUDF::new_from_impl(TableWriteFunc::new()));
+        Arc::new(ScalarUDF::new_from_impl(TableWriteFunc::default()));
 }
 
 #[derive(Clone)]
@@ -701,8 +701,7 @@ pub fn normalize_sql_object_name_to_string(sql_object_name: &ObjectName) -> Stri
         .0
         .iter()
         // TODO(zipper): ObjectNamePart::as_ident may return None in the future, add unit test for this function.
-        .map(ObjectNamePart::as_ident)
-        .flatten()
+        .filter_map(ObjectNamePart::as_ident)
         .map(normalize_ident)
         .collect::<Vec<String>>()
         .join(".")
