@@ -17,8 +17,6 @@ use crate::extension::expr::INTEGERS;
 mod state_agg_accumulator;
 mod state_agg_data;
 
-const LIST_ELEMENT_NAME: &str = "item";
-
 pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<(), QueryError> {
     func_manager.register_udaf(AggregateUDF::new_from_impl(StageAggFunction::new(true)))?;
     func_manager.register_udaf(AggregateUDF::new_from_impl(StageAggFunction::new(false)))?;

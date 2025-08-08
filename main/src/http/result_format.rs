@@ -8,12 +8,12 @@ use datafusion::arrow::util::pretty::pretty_format_batches;
 use http_protocol::encoding::Encoding;
 use http_protocol::header::{
     APPLICATION_CSV, APPLICATION_JSON, APPLICATION_NDJSON, APPLICATION_PREFIX, APPLICATION_STAR,
-    APPLICATION_TABLE, APPLICATION_TSV, CONTENT_TYPE, STAR_STAR, TEXT_PREFIX,
+    APPLICATION_TABLE, APPLICATION_TSV, STAR_STAR, TEXT_PREFIX,
 };
-use http_protocol::status_code::OK;
 use metrics::count::U64Counter;
-use reqwest::header::CONTENT_ENCODING;
 use trace::error;
+use warp::http::header::{CONTENT_ENCODING, CONTENT_TYPE};
+use warp::http::StatusCode;
 use warp::reply::Response;
 use warp::{reject, Rejection};
 
@@ -43,7 +43,7 @@ fn batches_with_sep(
     let mut bytes = vec![];
     {
         let builder = WriterBuilder::new()
-            .has_headers(has_headers)
+            .with_header(has_headers)
             .with_delimiter(delimiter);
         let mut writer = builder.build(&mut bytes);
         for batch in batches {
@@ -106,8 +106,8 @@ impl ResultFormat {
                     reason: format!("{}", e),
                 })?;
 
-        let mut builder =
-            ResponseBuilder::new(OK).insert_header((CONTENT_TYPE, self.get_http_content_type()));
+        let mut builder = ResponseBuilder::new(StatusCode::OK)
+            .insert_header((CONTENT_TYPE, self.get_http_content_type()));
         if let Some(encoding) = result_encoding {
             builder = builder.insert_header((CONTENT_ENCODING, encoding.to_header_value()));
             result = encoding

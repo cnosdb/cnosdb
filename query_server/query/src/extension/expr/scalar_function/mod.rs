@@ -9,10 +9,6 @@ mod locf;
 mod state_at;
 mod utils;
 
-use std::sync::Arc;
-
-use datafusion::error::DataFusionError;
-use datafusion::logical_expr::ScalarFunctionImplementation;
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;
 
@@ -34,14 +30,6 @@ pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> QueryRes
     state_at::register_udf(func_manager)?;
     gis::register_udfs(func_manager)?;
     Ok(())
-}
-
-pub(crate) fn unimplemented_scalar_impl(name: &'static str) -> ScalarFunctionImplementation {
-    Arc::new(move |_| {
-        Err(DataFusionError::NotImplemented(format!(
-            "{name} is not yet implemented"
-        )))
-    })
 }
 
 #[cfg(test)]

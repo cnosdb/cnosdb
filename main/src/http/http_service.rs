@@ -22,7 +22,6 @@ use http_protocol::parameter::{
     DebugParam, DumpParam, FindTracesParam, GetOperationParam, LogParam, SqlParam, WriteParam,
 };
 use http_protocol::response::ErrorResponse;
-use http_protocol::status_code::OK;
 use meta::error::{MetaError, MetaResult};
 use meta::limiter::RequestLimiter;
 use meta::model::MetaRef;
@@ -42,7 +41,6 @@ use protocol_parser::line_protocol::line_protocol_to_lines;
 use protocol_parser::open_tsdb::open_tsdb_to_lines;
 use protocol_parser::{DataPoint, Line};
 use query::prom::remote_server::PromRemoteSqlServer;
-use reqwest::header::{HeaderName, HeaderValue, ACCEPT_ENCODING, CONTENT_ENCODING, CONTENT_TYPE};
 use snafu::{IntoError, ResultExt};
 use spi::query::config::StreamTriggerInterval;
 use spi::server::dbms::DBMSRef;
@@ -56,6 +54,10 @@ use trace::span_ext::SpanExt;
 use trace::{debug, error, info, Span, SpanContext};
 use utils::backtrace;
 use utils::precision::Precision;
+use warp::http::header::{
+    HeaderName, HeaderValue, ACCEPT_ENCODING, CONTENT_ENCODING, CONTENT_TYPE,
+};
+use warp::http::StatusCode;
 use warp::hyper::body::Bytes;
 use warp::hyper::Body;
 use warp::reject::{MethodNotAllowed, MissingHeader, PayloadTooLarge};
@@ -1411,7 +1413,7 @@ impl HttpService {
                         .map(|r| r.into_bytes())
                         .map_err(|e| {
                             error!("Failed to dump ddl sql, err: {:?}", e);
-                            reject::custom(e)
+                            reject::custom(HttpError::Meta { source: e })
                         });
                     let result_size = size_of_val(&resp);
                     let value_size = match &resp {
@@ -1443,7 +1445,7 @@ impl HttpService {
 
             let mut resp = HashMap::new();
             resp.insert("version", Version { number: "8.4.0" });
-            let mut builder = ResponseBuilder::new(OK);
+            let mut builder = ResponseBuilder::new(StatusCode::OK);
             builder = builder.insert_header((
                 HeaderName::from_static("x-elastic-product"),
                 HeaderValue::from_static("Elasticsearch"),
@@ -1457,7 +1459,7 @@ impl HttpService {
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "es").and(warp::head()).map(|| {
-            let mut builder = ResponseBuilder::new(OK);
+            let mut builder = ResponseBuilder::new(StatusCode::OK);
             builder = builder.insert_header((
                 HeaderName::from_static("x-elastic-product"),
                 HeaderValue::from_static("Elasticsearch"),
@@ -1661,7 +1663,7 @@ impl HttpService {
                             errors: false,
                             items: vec!["{\"create\":{\"status\":201}}".to_string(); logs_len],
                         };
-                        Ok::<_, Rejection>(ResponseBuilder::new(OK).json(&resp))
+                        Ok::<_, Rejection>(ResponseBuilder::new(StatusCode::OK).json(&resp))
                     }
                 },
             )
@@ -1975,7 +1977,7 @@ impl HttpService {
                     );
 
                     // return
-                    let builder = ResponseBuilder::new(OK).insert_header((
+                    let builder = ResponseBuilder::new(StatusCode::OK).insert_header((
                         CONTENT_TYPE,
                         HeaderValue::from_static("application/json"),
                     ));
@@ -2123,7 +2125,7 @@ impl HttpService {
                     );
 
                     // return
-                    let builder = ResponseBuilder::new(OK).insert_header((
+                    let builder = ResponseBuilder::new(StatusCode::OK).insert_header((
                         CONTENT_TYPE,
                         HeaderValue::from_static("application/json"),
                     ));
@@ -2247,7 +2249,7 @@ impl HttpService {
                     );
 
                     // return
-                    let builder = ResponseBuilder::new(OK).insert_header((
+                    let builder = ResponseBuilder::new(StatusCode::OK).insert_header((
                         CONTENT_TYPE,
                         HeaderValue::from_static("application/json"),
                     ));
@@ -2392,7 +2394,7 @@ impl HttpService {
                     );
 
                     // return
-                    let builder = ResponseBuilder::new(OK).insert_header((
+                    let builder = ResponseBuilder::new(StatusCode::OK).insert_header((
                         CONTENT_TYPE,
                         HeaderValue::from_static("application/json"),
                     ));
@@ -2516,7 +2518,7 @@ impl HttpService {
                     );
 
                     // return
-                    let builder = ResponseBuilder::new(OK).insert_header((
+                    let builder = ResponseBuilder::new(StatusCode::OK).insert_header((
                         CONTENT_TYPE,
                         HeaderValue::from_static("application/json"),
                     ));

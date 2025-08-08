@@ -31,13 +31,13 @@ pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> QueryRe
 }
 
 #[derive(Debug)]
-pub struct DataQualityAggregateUDF {
+struct DataQualityAggregateUDF {
     data_quality_func: DataQualityFunction,
     signature: Signature,
 }
 
 impl DataQualityAggregateUDF {
-    pub fn new(data_quality_func: DataQualityFunction) -> Self {
+    fn new(data_quality_func: DataQualityFunction) -> Self {
         let type_signatures: Vec<_> = NUMERICS
             .iter()
             .flat_map(|t| {

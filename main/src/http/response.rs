@@ -8,19 +8,15 @@ use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
 use futures::{ready, FutureExt, Stream, StreamExt};
 use http_protocol::encoding::Encoding;
-use http_protocol::header::{APPLICATION_JSON, CONTENT_TYPE};
+use http_protocol::header::APPLICATION_JSON;
 use http_protocol::response::ErrorResponse;
-use http_protocol::status_code::{
-    BAD_REQUEST, INTERNAL_SERVER_ERROR, METHOD_NOT_ALLOWED, NOT_FOUND, OK, PAYLOAD_TOO_LARGE,
-};
 use meta::limiter::RequestLimiter;
 use metrics::count::U64Counter;
-use reqwest::header::CONTENT_ENCODING;
 use serde::Serialize;
 use snafu::ResultExt;
 use spi::query::execution::Output;
 use spi::QueryError;
-use warp::http::header::HeaderMap;
+use warp::http::header::{HeaderMap, CONTENT_ENCODING, CONTENT_TYPE};
 use warp::http::{HeaderValue, StatusCode};
 use warp::reply::Response;
 use warp::{hyper, Reply};
@@ -82,37 +78,37 @@ impl ResponseBuilder {
 
         match error {
             Ok(body) => builder.build(body),
-            Err(()) => INTERNAL_SERVER_ERROR.into_response(),
+            Err(()) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }
     }
 }
 
 impl ResponseBuilder {
     pub fn ok() -> Response {
-        OK.into_response()
+        StatusCode::OK.into_response()
     }
 
     pub fn bad_request<T>(error_info: &T) -> Response
     where
         T: Serialize,
     {
-        Self::new(BAD_REQUEST).json(error_info)
+        Self::new(StatusCode::BAD_REQUEST).json(error_info)
     }
 
     pub fn not_found() -> Response {
-        NOT_FOUND.into_response()
+        StatusCode::NOT_FOUND.into_response()
     }
 
     pub fn internal_server_error() -> Response {
-        INTERNAL_SERVER_ERROR.into_response()
+        StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
 
     pub fn method_not_allowed() -> Response {
-        METHOD_NOT_ALLOWED.into_response()
+        StatusCode::METHOD_NOT_ALLOWED.into_response()
     }
 
     pub fn payload_too_large() -> Response {
-        PAYLOAD_TOO_LARGE.into_response()
+        StatusCode::PAYLOAD_TOO_LARGE.into_response()
     }
 }
 pub type CheckFuture = BoxFuture<'static, Result<(), HttpError>>;
@@ -163,7 +159,7 @@ impl HttpResponse {
         )
     }
     pub fn wrap_stream_to_response(self) -> Result<Response, HttpError> {
-        let mut builder = ResponseBuilder::new(OK)
+        let mut builder = ResponseBuilder::new(StatusCode::OK)
             .insert_header((CONTENT_TYPE, self.format.get_http_content_type()));
         if let Some(encoding) = self.encoding {
             builder = builder.insert_header((CONTENT_ENCODING, encoding.to_header_value()));
@@ -315,19 +311,19 @@ mod tests {
 
     #[test]
     fn test_simple_response() {
-        assert_eq!(ResponseBuilder::ok().status(), OK);
-        assert_eq!(ResponseBuilder::not_found().status(), NOT_FOUND);
+        assert_eq!(ResponseBuilder::ok().status(), StatusCode::OK);
+        assert_eq!(ResponseBuilder::not_found().status(), StatusCode::NOT_FOUND);
         assert_eq!(
             ResponseBuilder::internal_server_error().status(),
-            INTERNAL_SERVER_ERROR
+            StatusCode::INTERNAL_SERVER_ERROR
         );
         assert_eq!(
             ResponseBuilder::method_not_allowed().status(),
-            METHOD_NOT_ALLOWED
+            StatusCode::METHOD_NOT_ALLOWED
         );
         assert_eq!(
             ResponseBuilder::payload_too_large().status(),
-            PAYLOAD_TOO_LARGE
+            StatusCode::PAYLOAD_TOO_LARGE
         );
     }
 
@@ -336,7 +332,7 @@ mod tests {
         let error_resp = ErrorResponse::new(&UnknownCode);
         let resp = ResponseBuilder::bad_request(&error_resp);
 
-        assert_eq!(resp.status(), BAD_REQUEST);
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
         let content_type = resp.headers().get(CONTENT_TYPE).unwrap();
 

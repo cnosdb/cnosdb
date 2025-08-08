@@ -180,7 +180,7 @@ impl OptimizerRule for PushDownAggregation {
                             let all_group_expr: Vec<&Expr> = grouping_set_to_exprlist(&group_expr)?;
                             all_group_expr
                                 .iter()
-                                .map(|e| e.add_column_refs(&mut new_required_columns));
+                                .for_each(|e| e.add_column_refs(&mut new_required_columns));
 
                             let projection_expr = new_required_columns
                                 .into_iter()

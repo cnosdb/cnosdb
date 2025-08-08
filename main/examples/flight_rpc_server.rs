@@ -3,7 +3,7 @@ use std::pin::Pin;
 use arrow_flight::flight_service_server::{FlightService, FlightServiceServer};
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
-    HandshakeRequest, HandshakeResponse, PutResult, SchemaResult, Ticket,
+    HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaResult, Ticket,
 };
 use futures::Stream;
 use tonic::transport::Server;
@@ -47,6 +47,13 @@ impl FlightService for FlightServiceImpl {
         &self,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        Err(Status::unimplemented("Not yet implemented"))
+    }
+
+    async fn poll_flight_info(
+        &self,
+        _request: Request<FlightDescriptor>,
+    ) -> Result<Response<PollInfo>, Status> {
         Err(Status::unimplemented("Not yet implemented"))
     }
 

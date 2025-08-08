@@ -171,6 +171,12 @@ impl IntoHeaderValue for HeaderValue {
     }
 }
 
+impl IntoHeaderValue for http_protocol::header::HeaderValue {
+    fn into_value(self) -> HeaderValue {
+        HeaderValue::from_bytes(self.as_bytes()).unwrap_or(HeaderValue::from_static(""))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use base64::prelude::{Engine, BASE64_STANDARD};

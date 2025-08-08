@@ -5,10 +5,8 @@ use coordinator::service::CoordinatorRef;
 use coordinator::SendableCoordinatorRecordBatchStream;
 use datafusion::arrow::array::{Array, Float64Array, StringArray, TimestampNanosecondArray};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::execution::context::SessionState;
-use datafusion::execution::runtime_env::RuntimeEnv;
+use datafusion::execution::SessionStateBuilder;
 use datafusion::logical_expr::{col, lit};
-use datafusion::prelude::SessionConfig;
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::sqlparser::parser::ParserError;
 use http_protocol::parameter::FindTracesParam;
@@ -274,13 +272,7 @@ impl OtlpToJaeger {
             };
             let split_manager = SplitManager::new(coord.clone());
             let splits = split_manager
-                .splits(
-                    &SessionState::with_config_rt(
-                        SessionConfig::default(),
-                        Arc::new(RuntimeEnv::default()),
-                    ),
-                    table_layout,
-                )
+                .splits(&SessionStateBuilder::new().build(), table_layout)
                 .await?;
 
             for split in splits {
@@ -530,7 +522,7 @@ impl OtlpToJaeger {
 
         let all_col_names = batch
             .schema()
-            .all_fields()
+            .flattened_fields()
             .iter()
             .map(|f| f.name().clone())
             .collect::<Vec<_>>();

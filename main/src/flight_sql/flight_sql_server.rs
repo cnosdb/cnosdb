@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use arrow_flight::flight_service_server::FlightService;
-use arrow_flight::sql::server::FlightSqlService;
+use arrow_flight::sql::server::{FlightSqlService, PeekableFlightDataStream};
 use arrow_flight::sql::{
     ActionBeginSavepointRequest, ActionBeginSavepointResult, ActionBeginTransactionRequest,
     ActionBeginTransactionResult, ActionCancelQueryRequest, ActionCancelQueryResult,
@@ -13,8 +13,8 @@ use arrow_flight::sql::{
     CommandGetCrossReference, CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys,
     CommandGetPrimaryKeys, CommandGetSqlInfo, CommandGetTableTypes, CommandGetTables,
     CommandGetXdbcTypeInfo, CommandPreparedStatementQuery, CommandPreparedStatementUpdate,
-    CommandStatementQuery, CommandStatementSubstraitPlan, CommandStatementUpdate, ProstMessageExt,
-    SqlInfo, TicketStatementQuery,
+    CommandStatementQuery, CommandStatementSubstraitPlan, CommandStatementUpdate,
+    DoPutPreparedStatementResult, ProstMessageExt, SqlInfo, TicketStatementQuery,
 };
 use arrow_flight::{
     utils as flight_utils, Action, FlightData, FlightDescriptor, FlightEndpoint, FlightInfo,
@@ -290,13 +290,13 @@ where
             .await?;
         let output = query_result.result();
 
-        let schema = (*output.schema()).clone();
+        let schema = (output.schema()).clone();
         let batches = output
             .chunk_result()
             .await
             .map_err(|e| status!("Could not chunk result", e))?;
 
-        let flight_data = flight_utils::batches_to_flight_data(schema, batches)
+        let flight_data = flight_utils::batches_to_flight_data(schema.as_ref(), batches)
             .map_err(|e| status!("Could not convert batches", e))?
             .into_iter()
             .map(Ok);
@@ -857,12 +857,9 @@ where
     async fn do_put_statement_update(
         &self,
         ticket: CommandStatementUpdate,
-        request: Request<Streaming<FlightData>>,
+        request: Request<PeekableFlightDataStream>,
     ) -> Result<i64, Status> {
-        debug!(
-            "do_put_statement_update: query: {:?}, request: {:?}",
-            ticket, request
-        );
+        debug!("do_put_statement_update: query: {:?}", ticket);
 
         let span = get_span(request.extensions(), "flight sql do_put_statement_update");
         let span_ctx = span.context();
@@ -888,11 +885,12 @@ where
     async fn do_put_prepared_statement_query(
         &self,
         query: CommandPreparedStatementQuery,
-        request: Request<Streaming<FlightData>>,
-    ) -> Result<Response<<Self as FlightService>::DoPutStream>, Status> {
+        request: Request<PeekableFlightDataStream>,
+    ) -> Result<DoPutPreparedStatementResult, Status> {
         debug!(
             "do_put_prepared_statement_query: query: {:?}, request: {:?}",
-            query, request
+            query,
+            request.into_inner().into_inner()
         );
 
         Err(Status::unimplemented(
@@ -908,7 +906,7 @@ where
     async fn do_put_prepared_statement_update(
         &self,
         query: CommandPreparedStatementUpdate,
-        request: Request<Streaming<FlightData>>,
+        request: Request<PeekableFlightDataStream>,
     ) -> Result<i64, Status> {
         let prepared_statement_ident = query.prepared_statement_handle.to_byte_slice();
         debug!(
@@ -1045,7 +1043,7 @@ where
     async fn do_put_substrait_plan(
         &self,
         _ticket: CommandStatementSubstraitPlan,
-        _request: Request<Streaming<FlightData>>,
+        _request: Request<PeekableFlightDataStream>,
     ) -> Result<i64, Status> {
         Err(Status::unimplemented(
             "do_put_substrait_plan not implemented",
@@ -1098,9 +1096,10 @@ mod test {
     use arrow_flight::sql::client::FlightSqlServiceClient;
     use arrow_flight::sql::{Any, CommandStatementQuery};
     use arrow_flight::utils::flight_data_to_batches;
-    use arrow_flight::{FlightDescriptor, HandshakeRequest, IpcMessage};
+    use arrow_flight::{FlightData, FlightDescriptor, HandshakeRequest, IpcMessage};
     use datafusion::arrow::buffer::Buffer;
     use datafusion::arrow::datatypes::Schema;
+    use datafusion::arrow::ipc::writer::{DictionaryTracker, IpcDataGenerator, IpcWriteOptions};
     use datafusion::arrow::{self, ipc};
     use futures::{StreamExt, TryStreamExt};
     use http_protocol::header::AUTHORIZATION;
@@ -1243,12 +1242,25 @@ mod test {
         let mut stmt = client.prepare("select 1".into(), None).await.unwrap();
         let flight_info = stmt.execute().await.unwrap();
 
+        let encoder = IpcDataGenerator::default();
+        let mut tracker = DictionaryTracker::new(false);
+        let options = IpcWriteOptions::default();
+
         let mut batches = vec![];
         for ep in &flight_info.endpoint {
             if let Some(tkt) = &ep.ticket {
                 let stream = client.do_get(tkt.clone()).await.unwrap();
-                let flight_data = stream.try_collect::<Vec<_>>().await.unwrap();
-                batches.extend(flight_data_to_batches(&flight_data).unwrap());
+                let results: Vec<arrow::array::RecordBatch> =
+                    stream.try_collect::<Vec<_>>().await.unwrap();
+                let mut flights: Vec<FlightData> = Vec::with_capacity(results.len());
+                for batch in &results {
+                    let (flight_dictionaries, flight_batch) = encoder
+                        .encoded_batch(batch, &mut tracker, &options)
+                        .unwrap();
+                    flights.extend(flight_dictionaries.into_iter().map(Into::into));
+                    flights.push(flight_batch.into());
+                }
+                batches.extend(flight_data_to_batches(&flights).unwrap());
             };
         }
     }

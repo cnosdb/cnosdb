@@ -1,4 +1,3 @@
-use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::type_coercion::aggregates::TIMESTAMPS;
@@ -16,24 +15,6 @@ pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResu
     let udf = ScalarUDF::new_from_impl(StateAtFunc::new());
     func_manager.register_udf(udf)?;
     Ok(())
-}
-
-fn state_at_implement(input: &[ArrayRef]) -> Result<ArrayRef, DataFusionError> {
-    let array_len = input[0].len();
-    let mut res = Vec::with_capacity(array_len);
-    for i in 0..array_len {
-        let state_agg = ScalarValue::try_from_array(input[0].as_ref(), i)?;
-        let ts = ScalarValue::try_from_array(input[1].as_ref(), i)?;
-        let state_agg = StateAggData::try_from(state_agg)?;
-        if state_agg.is_compact() {
-            return Err(DataFusionError::External(Box::new(AnalyzerSnafu {err:
-            "duration_in(state_agg, state, start_time, interval) doesn't support compact_agg".to_string()}.build())));
-        }
-        let value = state_agg.state_at(&ts)?;
-        res.push(value)
-    }
-    let array = ScalarValue::iter_to_array(res)?;
-    Ok(array)
 }
 
 #[derive(Debug)]
