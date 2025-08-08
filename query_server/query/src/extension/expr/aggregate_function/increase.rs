@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::common::{DataFusionError, Result as DFResult};
+use datafusion::logical_expr::function::AccumulatorArgs;
 use datafusion::logical_expr::type_coercion::aggregates::{NUMERICS, TIMESTAMPS};
 use datafusion::logical_expr::{
-    AccumulatorFactoryFunction, AggregateUDF, ReturnTypeFunction, Signature, StateTypeFunction,
-    TypeSignature, Volatility,
+    AggregateUDF, AggregateUDFImpl, Signature, TypeSignature, Volatility,
 };
 use datafusion::physical_plan::Accumulator;
 use datafusion::scalar::ScalarValue;
@@ -22,45 +20,61 @@ pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> QueryRes
     Ok(udf)
 }
 
-fn new() -> AggregateUDF {
-    let return_type_func: ReturnTypeFunction =
-        Arc::new(move |input| Ok(Arc::new(input[1].clone())));
+#[derive(Debug)]
+pub struct IncreaseFunc {
+    signature: Signature,
+}
 
-    let state_type_func: StateTypeFunction =
-        Arc::new(move |_, return_type| Ok(Arc::new(vec![return_type.clone()])));
+impl IncreaseFunc {
+    pub fn new() -> Self {
+        // increase(
+        //     time TIMESTAMP,
+        //     value NUMERICS order by time
+        //   )
+        let type_signatures = NUMERICS
+            .iter()
+            .flat_map(|t| {
+                TIMESTAMPS
+                    .iter()
+                    .map(|s_t| TypeSignature::Exact(vec![s_t.clone(), t.clone()]))
+            })
+            .collect();
+        Self {
+            signature: Signature::one_of(type_signatures, Volatility::Immutable),
+        }
+    }
+}
 
-    let accumulator: AccumulatorFactoryFunction = Arc::new(|input, _| {
-        let time_data_type = input[0].clone();
-        let value_data_type = input[1].clone();
+impl AggregateUDFImpl for IncreaseFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        INCREASE_NAME
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, arg_types: &[DataType]) -> DFResult<DataType> {
+        Ok(arg_types[1].clone())
+    }
+
+    fn accumulator(&self, acc_args: AccumulatorArgs) -> DFResult<Box<dyn Accumulator>> {
+        let time_data_type = acc_args.exprs[0].data_type(acc_args.schema)?;
+        let value_data_type = acc_args.exprs[1].data_type(acc_args.schema)?;
 
         Ok(Box::new(IncreaseAccumulator::try_new(
             time_data_type,
             value_data_type,
         )?))
-    });
+    }
+}
 
-    // increase(
-    //     time TIMESTAMP,
-    //     value NUMERICS order by time
-    //   )
-    let type_signatures = NUMERICS
-        .iter()
-        .flat_map(|t| {
-            TIMESTAMPS
-                .iter()
-                .map(|s_t| TypeSignature::Exact(vec![s_t.clone(), t.clone()]))
-        })
-        .collect();
-
-    AggregateUDF::new_with_preference(
-        INCREASE_NAME,
-        &Signature::one_of(type_signatures, Volatility::Immutable),
-        &return_type_func,
-        &accumulator,
-        &state_type_func,
-        true,
-        false,
-    )
+fn new() -> AggregateUDF {
+    AggregateUDF::new_from_impl(IncreaseFunc::new())
 }
 
 #[derive(Debug)]

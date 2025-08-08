@@ -12,10 +12,10 @@ use spi::{AnalyzerSnafu, QueryResult};
 use crate::extension::expr::aggregate_function::StateAggData;
 use crate::extension::expr::scalar_function::STATE_AT;
 
-pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<ScalarUDF> {
-    let udf = StateAtFunc::new();
-    func_manager.register_udf(udf.clone())?;
-    Ok(udf)
+pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
+    let udf = ScalarUDF::new_from_impl(StateAtFunc::new());
+    func_manager.register_udf(udf)?;
+    Ok(())
 }
 
 fn state_at_implement(input: &[ArrayRef]) -> Result<ArrayRef, DataFusionError> {
@@ -86,7 +86,7 @@ impl ScalarUDFImpl for StateAtFunc {
     }
 
     fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
-        let input = ColumnarValue::values_to_arrays(args)?;
+        let input = ColumnarValue::values_to_arrays(&args.args)?;
         let array_len = input[0].len();
         let mut res = Vec::with_capacity(array_len);
         for i in 0..array_len {
@@ -104,6 +104,6 @@ impl ScalarUDFImpl for StateAtFunc {
             res.push(value)
         }
         let array = ScalarValue::iter_to_array(res)?;
-        Ok(array)
+        Ok(ColumnarValue::Array(array))
     }
 }

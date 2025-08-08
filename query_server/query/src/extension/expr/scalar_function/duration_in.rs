@@ -1,4 +1,4 @@
-use datafusion::arrow::array::{Array, ArrayRef};
+use datafusion::arrow::array::Array;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::common::ScalarValue;
 use datafusion::error::{DataFusionError, Result as DFResult};
@@ -14,13 +14,10 @@ use crate::extension::expr::aggregate_function::StateAggData;
 use crate::extension::expr::scalar_function::DURATION_IN;
 use crate::extension::expr::INTERVALS;
 
-pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<ScalarUDF> {
-    let udf = DurationInFunc::new();
-    func_manager.register_udf(udf.clone())?;
-    Ok(udf)
+pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
+    func_manager.register_udf(ScalarUDF::new_from_impl(DurationInFunc::new()))?;
+    Ok(())
 }
-
-fn duration_in_implement(input: &[ArrayRef]) -> Result<ArrayRef, DataFusionError> {}
 
 #[derive(Debug)]
 pub struct DurationInFunc {
@@ -153,6 +150,6 @@ impl ScalarUDFImpl for DurationInFunc {
             }
         }
         let array = ScalarValue::iter_to_array(res)?;
-        Ok(array)
+        Ok(ColumnarValue::Array(array))
     }
 }

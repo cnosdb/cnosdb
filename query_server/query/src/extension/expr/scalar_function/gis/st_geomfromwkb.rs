@@ -4,41 +4,64 @@ use datafusion::arrow::array::{downcast_array, BinaryArray, StringArray};
 use datafusion::arrow::datatypes::DataType;
 use datafusion::common::Result as DFResult;
 use datafusion::logical_expr::{
-    ColumnarValue, ReturnTypeFunction, ScalarUDF, Signature, Volatility,
+    ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
 };
 use geozero::wkb::Wkb;
 use geozero::ToWkt;
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;
 
-pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<ScalarUDF> {
-    let udf = new();
-    func_manager.register_udf(udf.clone())?;
-    Ok(udf)
+pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
+    func_manager.register_udf(ScalarUDF::new_from_impl(StGeoFromWkbFunc::new()))?;
+    Ok(())
 }
 
-fn new() -> ScalarUDF {
-    let signature = Signature::exact(vec![DataType::Binary], Volatility::Immutable);
-    let return_type: ReturnTypeFunction = Arc::new(move |_| Ok(Arc::new(DataType::Utf8)));
-
-    ScalarUDF::new("st_GeomFromWKB", &signature, &return_type, Arc::new(func))
+#[derive(Debug)]
+pub struct StGeoFromWkbFunc {
+    signature: Signature,
 }
 
-fn func(args: &[ColumnarValue]) -> DFResult<ColumnarValue> {
-    let args = ColumnarValue::values_to_arrays(args)?;
-    let wkb_arr = args[0].as_ref();
-    let wkb_arr = downcast_array::<BinaryArray>(wkb_arr);
+impl StGeoFromWkbFunc {
+    pub fn new() -> Self {
+        Self {
+            signature: Signature::exact(vec![DataType::Binary], Volatility::Immutable),
+        }
+    }
+}
 
-    let result: StringArray = wkb_arr
-        .iter()
-        .map(|opt| {
-            opt.and_then(|bytes| {
-                let wkb = Wkb(bytes.to_vec());
-                // conversion failed to null
-                wkb.to_wkt().ok()
+impl ScalarUDFImpl for StGeoFromWkbFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        "st_GeomFromWKB"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, _arg_types: &[DataType]) -> DFResult<DataType> {
+        Ok(DataType::Utf8)
+    }
+
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
+        let args = ColumnarValue::values_to_arrays(&args.args)?;
+        let wkb_arr = args[0].as_ref();
+        let wkb_arr = downcast_array::<BinaryArray>(wkb_arr);
+
+        let result: StringArray = wkb_arr
+            .iter()
+            .map(|opt| {
+                opt.and_then(|bytes| {
+                    let wkb = Wkb(bytes.to_vec());
+                    // conversion failed to null
+                    wkb.to_wkt().ok()
+                })
             })
-        })
-        .collect();
+            .collect();
 
-    Ok(Arc::new(result))
+        Ok(ColumnarValue::Array(Arc::new(result)))
+    }
 }

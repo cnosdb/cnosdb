@@ -61,7 +61,7 @@ mod tests {
 
         let expect_udf = expect_udf.unwrap();
 
-        let result_udf = func_manager.udf(&expect_udf.name);
+        let result_udf = func_manager.udf(&expect_udf.name());
 
         assert!(result_udf.is_ok(), "not get result from func manager.");
 

@@ -15,15 +15,10 @@ pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> QueryRes
 fn new() -> AggregateUDF {
     create_udaf(
         "MY_AVG",
-        DataType::Float64,
+        vec![DataType::Float64],
         Arc::new(DataType::Float64),
         Volatility::Immutable,
-        Arc::new(|_, _| {
-            Ok(Box::new(AvgAccumulator::try_new(
-                &DataType::Float64,
-                &DataType::Float64,
-            )?))
-        }),
+        Arc::new(|_| Ok(Box::<AvgAccumulator>::default())),
         Arc::new(vec![DataType::UInt64, DataType::Float64]),
     )
 }

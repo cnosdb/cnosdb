@@ -45,11 +45,8 @@ impl AggregateUDFImpl for ExactCountFunc {
         Ok(DataType::Int64)
     }
 
-    fn accumulator(&self, acc_args: AccumulatorArgs) -> DFResult<Box<dyn Accumulator>> {
-        Ok(Box::new(AvgAccumulator::try_new(
-            &DataType::Utf8,
-            &DataType::Int64,
-        )?))
+    fn accumulator(&self, _acc_args: AccumulatorArgs) -> DFResult<Box<dyn Accumulator>> {
+        Ok(Box::new(AvgAccumulator::default()))
     }
 
     fn state_fields(&self, args: StateFieldsArgs) -> DFResult<Vec<Field>> {
