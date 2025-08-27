@@ -54,7 +54,7 @@ impl ExecutionPlan for TracedProxyExec {
     }
 
     fn properties(&self) -> &PlanProperties {
-        &self.inner.properties()
+        self.inner.properties()
     }
 
     fn schema(&self) -> SchemaRef {

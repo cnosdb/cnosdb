@@ -6,9 +6,10 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+config = { path = "../../config" }
+
 async-backtrace = { workspace = true, optional = true }
 chrono = { workspace = true }
-config = { path = "../../config" }
 console-subscriber = { workspace = true }
 http = { workspace = true }
 itertools = { workspace = true }

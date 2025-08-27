@@ -33,7 +33,7 @@ pub struct ExpandExec {
     input: Arc<dyn ExecutionPlan>,
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
-    ///
+    /// Plan properties
     properties: PlanProperties,
 }
 
@@ -86,9 +86,8 @@ impl ExpandExec {
         let output_partitioning = match input.output_partitioning() {
             Partitioning::Hash(exprs, part) => {
                 let normalized_exprs = exprs
-                    .into_iter()
-                    .map(|expr| input_eq_properties.project_expr(expr, &alias_map))
-                    .flatten()
+                    .iter()
+                    .filter_map(|expr| input_eq_properties.project_expr(expr, &alias_map))
                     .collect::<Vec<_>>();
                 Partitioning::Hash(normalized_exprs, *part)
             }

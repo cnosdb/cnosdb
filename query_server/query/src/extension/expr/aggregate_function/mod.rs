@@ -160,7 +160,7 @@ mod tests {
 
         let expect_udaf = expect_udaf.unwrap();
 
-        let result_udaf = func_manager.udaf(&expect_udaf.name());
+        let result_udaf = func_manager.udaf(expect_udaf.name());
 
         assert!(result_udaf.is_ok(), "not get result from func manager.");
 

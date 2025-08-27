@@ -78,7 +78,7 @@ impl ExecutionPlan for TableWriterExec {
     }
 
     fn properties(&self) -> &PlanProperties {
-        &self.input.properties()
+        self.input.properties()
     }
 
     fn schema(&self) -> SchemaRef {

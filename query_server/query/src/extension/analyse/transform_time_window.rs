@@ -351,7 +351,7 @@ fn build_sliding_window_plan(
     let window_ns = window_duration.as_nanos();
     let slide_ns = slide_duration.as_nanos();
     // prevent window_duration + slide_duration from overflowing
-    let overlapping_windows = (window_ns + slide_ns - 1) / slide_ns;
+    let overlapping_windows = window_ns.div_ceil(slide_ns);
 
     // Do not allow windows to overlap too much
     if overlapping_windows > 100 {

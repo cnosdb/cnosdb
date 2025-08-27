@@ -215,7 +215,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         // prevent window_duration + slide_duration from overflowing
-        let overlapping_windows = (window_duration + slide_duration - 1) / slide_duration;
+        let overlapping_windows = window_duration.div_ceil(slide_duration);
 
         let windows = (0..overlapping_windows).map(|i| {
             make_window(

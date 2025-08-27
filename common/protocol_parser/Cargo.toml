@@ -18,12 +18,10 @@ datafusion = { workspace = true }
 fast-float = { workspace = true }
 flatbuffers = { workspace = true }
 itertools = { workspace = true }
-lazy_static = { workspace = true }
-parking_lot = { workspace = true }
+prost = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 snafu = { workspace = true }
-prost ={ workspace = true }
 
 [features]
 default = []

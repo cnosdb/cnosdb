@@ -6,17 +6,20 @@ use async_trait::async_trait;
 use datafusion::arrow::array::{ArrayRef, Float32Array, Int32Array, StringArray};
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::catalog::Session;
 use datafusion::common::{DFSchemaRef, DataFusionError, ToDFSchema};
 use datafusion::datasource::{self, TableProvider};
-use datafusion::execution::context::{SessionState, TaskContext};
+use datafusion::execution::context::TaskContext;
 use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::logical_expr::{
     LogicalPlan, LogicalPlanBuilder, TableType, UserDefinedLogicalNodeCore,
 };
-use datafusion::physical_expr::{planner, PhysicalSortExpr};
+use datafusion::physical_expr::{planner, EquivalenceProperties};
+use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::filter::FilterExec;
 use datafusion::physical_plan::{
-    ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream, Statistics,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties, RecordBatchStream,
+    SendableRecordBatchStream, Statistics,
 };
 use datafusion::prelude::*;
 use datafusion::scalar::ScalarValue;
@@ -96,25 +99,31 @@ impl TableProvider for Table {
     /// parallelized or distributed.
     async fn scan(
         &self,
-        ctx: &SessionState,
+        state: &dyn Session,
         _projection: Option<&Vec<usize>>,
         filters: &[Expr],
         _: Option<&TableScanAggregate>,
         _limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
+        let schema = Table::test_schema();
+        let df_schema = schema.clone().to_dfschema_ref()?;
+
         let table_scan_exec = TableScanExec {
+            properties: PlanProperties::new(
+                EquivalenceProperties::new(schema),
+                Partitioning::UnknownPartitioning(1),
+                EmissionType::Incremental,
+                Boundedness::Bounded,
+            ),
             columns: Table::test_columns(),
             data: Arc::new(Table::test_data()),
         };
-        let schema = Table::test_schema();
-        let df_schema = schema.clone().to_dfschema_ref()?;
         // todo: sid, timerange
         if !filters.is_empty() {
             let predicate = planner::create_physical_expr(
                 &filters[0],
                 df_schema.as_ref(),
-                schema.as_ref(),
-                ctx.execution_props(),
+                state.execution_props(),
             )?;
             let filter = FilterExec::try_new(predicate, Arc::new(table_scan_exec))?;
             Ok(Arc::new(filter))
@@ -170,11 +179,16 @@ impl RecordBatchStream for TableScanStream {
 
 #[derive(Debug)]
 pub struct TableScanExec {
+    properties: PlanProperties,
     columns: Vec<Column>,
     data: Arc<Vec<ArrayRef>>,
 }
 
 impl ExecutionPlan for TableScanExec {
+    fn name(&self) -> &str {
+        "TableScanExec"
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -188,15 +202,11 @@ impl ExecutionPlan for TableScanExec {
         ))
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(1)
+    fn properties(&self) -> &PlanProperties {
+        &self.properties
     }
 
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        None
-    }
-
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         vec![]
     }
 
@@ -220,23 +230,44 @@ impl ExecutionPlan for TableScanExec {
         Ok(Box::pin(TableScanStream::new(vec![batch], self.schema())))
     }
 
-    fn statistics(&self) -> Statistics {
-        Statistics {
-            num_rows: None,
-            total_byte_size: None,
-            column_statistics: None,
-            is_exact: false,
+    fn statistics(&self) -> Result<Statistics> {
+        Ok(Statistics::default())
+    }
+}
+
+impl DisplayAs for TableScanExec {
+    fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match t {
+            DisplayFormatType::Default | DisplayFormatType::Verbose => {
+                write!(f, "TableScanExec: columns=[[")?;
+                for (i, c) in self.columns.iter().enumerate() {
+                    write!(f, "{}", c.name)?;
+                    if i < self.columns.len() - 1 {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, "]]")
+            }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
+            }
         }
     }
 }
 
 #[derive(Debug)]
 pub struct TableScanPlan {
+    properties: PlanProperties,
     schema: SchemaRef,
     data: Arc<Vec<ArrayRef>>,
 }
 
 impl ExecutionPlan for TableScanPlan {
+    fn name(&self) -> &str {
+        "TableScanPlan"
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -245,15 +276,11 @@ impl ExecutionPlan for TableScanPlan {
         self.schema.clone()
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(1)
+    fn properties(&self) -> &PlanProperties {
+        &self.properties
     }
 
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        None
-    }
-
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         vec![]
     }
 
@@ -279,12 +306,21 @@ impl ExecutionPlan for TableScanPlan {
         )))
     }
 
-    fn statistics(&self) -> Statistics {
-        Statistics {
-            num_rows: None,
-            total_byte_size: None,
-            column_statistics: None,
-            is_exact: false,
+    fn statistics(&self) -> Result<Statistics> {
+        Ok(Statistics::default())
+    }
+}
+
+impl DisplayAs for TableScanPlan {
+    fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match t {
+            DisplayFormatType::Default | DisplayFormatType::Verbose => {
+                write!(f, "TableScanPlan")
+            }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
+            }
         }
     }
 }
@@ -294,7 +330,17 @@ pub struct TableScanNode {
     schema: DFSchemaRef,
 }
 
+impl PartialOrd for TableScanNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.schema.fields().partial_cmp(other.schema.fields())
+    }
+}
+
 impl UserDefinedLogicalNodeCore for TableScanNode {
+    fn name(&self) -> &str {
+        "TableScanNode"
+    }
+
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![]
     }
@@ -320,12 +366,12 @@ impl UserDefinedLogicalNodeCore for TableScanNode {
         todo!()
     }
 
-    fn from_template(&self, _exprs: &[Expr], _inputs: &[LogicalPlan]) -> Self {
+    fn with_exprs_and_inputs(
+        &self,
+        _exprs: Vec<Expr>,
+        _inputs: Vec<LogicalPlan>,
+    ) -> datafusion::error::Result<Self> {
         todo!()
-    }
-
-    fn name(&self) -> &str {
-        "TableScan"
     }
 }
 

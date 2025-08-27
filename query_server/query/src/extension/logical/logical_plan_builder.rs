@@ -185,11 +185,12 @@ fn semantic_check(
 }
 
 /// Add a projection operation (if necessary)
+///
 /// 1. Iterate over all fields of the table
-///    1.1. Construct the col expression
-///    1.2. Check if the current field exists in columns
-///       1.2.1. does not exist: add cast(null as target_type) expression to save
-///       1.2.1. Exist: save if the type matches, add cast(expr as target_type) to save if it does not exist
+///    1. Construct the col expression
+///    2. Check if the current field exists in columns
+///       1. Does not exist: add cast(null as target_type) expression to save
+///       2. Exist: save if the type matches, add cast(expr as target_type) to save if it does not exist
 fn add_projection_between_source_and_insert_node_if_necessary(
     target_table: Arc<dyn TableSource>,
     source_plan: LogicalPlan,

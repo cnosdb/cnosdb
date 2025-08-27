@@ -989,14 +989,13 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let database_name = resolved_table.database().to_string();
         let unit: TimeUnit = self.get_db_precision(&database_name)?.into();
 
-        let time_col =
-            TableColumn::new_time_column(id_generator.next_id() as ColumnId, unit.clone());
+        let time_col = TableColumn::new_time_column(id_generator.next_id() as ColumnId, unit);
         // Append time column at the start
         schema.push(time_col);
 
         for column_opt in columns {
             let col_id = id_generator.next_id() as ColumnId;
-            let column = self.column_opt_to_table_column(column_opt, col_id, unit.clone())?;
+            let column = self.column_opt_to_table_column(column_opt, col_id, unit)?;
             schema.push(column);
         }
 
@@ -1181,7 +1180,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             })?
             .column_type
         {
-            unit.clone()
+            *unit
         } else {
             return Err(CommonSnafu {
                 msg: "time column type not match".to_string(),

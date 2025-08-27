@@ -580,13 +580,21 @@ impl OtlpToJaeger {
                     )))?
                     .value(row_i) as i64;
                 span.tags.push(KeyValue {
-                    key: col_name.split('/').last().unwrap_or(col_name).to_string(),
+                    key: col_name
+                        .split('/')
+                        .next_back()
+                        .unwrap_or(col_name)
+                        .to_string(),
                     value_type: Some(super::jaeger_model::ValueType::Int64),
                     value: serde_json::Value::Number(value.into()),
                 });
             } else if col_name.eq(TRACE_STATE_COL_NAME) {
                 span.tags.push(KeyValue {
-                    key: col_name.split('/').last().unwrap_or(col_name).to_string(),
+                    key: col_name
+                        .split('/')
+                        .next_back()
+                        .unwrap_or(col_name)
+                        .to_string(),
                     value_type: Some(super::jaeger_model::ValueType::String),
                     value: serde_json::Value::String(
                         batch

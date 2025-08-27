@@ -426,7 +426,7 @@ impl TimePeriod {
         for period in periods {
             values.push(period.try_into()?);
         }
-        Ok(ScalarValue::new_list_nullable(&values, &data_type))
+        Ok(ScalarValue::new_list_nullable(&values, data_type))
     }
 
     pub fn periods_try_from_list_array(periods_list: Arc<ListArray>) -> DFResult<Vec<Self>> {

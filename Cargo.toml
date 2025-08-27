@@ -120,7 +120,7 @@ env_logger = "0.11"
 minitrace = "0.6"
 minitrace-opentelemetry = "0.6" # Opentelemetry reporter, needs opentelemetry=^0.23
 opentelemetry = "0.23"
-opentelemetry-otlp = "0.16" # Opentelemetry collector, needs opentelemetry=^0.23
+opentelemetry-otlp = "0.16" # Opentelemetry collector, needs opentelemetry=^0.23, opentelemetry-proto=^0.6
 opentelemetry_sdk = "0.23"
 tracing = "0.1"
 tracing-appender = "0.2"
@@ -134,16 +134,16 @@ dircpy = "0.3"
 dirs = "6.0"
 figment = "0.10" # Configuration
 indicatif = "0.17" # Progress bar
-memmap2 = "0.9.5" # Memory-mapped file IO
+memmap2 = "0.9.7" # Memory-mapped file IO
 mio = "1.0.3"
-num_cpus = "1.16"
-os_info = "3.10"
+num_cpus = "1.17"
+os_info = "3.12"
 rpassword = "7.4" # Read password in console
 run_script = "0.11"
-rustyline = "15.0"
+rustyline = "15.0" # TODO(zipper): upgrade to 17
 sys-info = "0.9"
 sysinfo = "0.34"
-tempfile = "3.19"
+tempfile = "3.20"
 walkdir = "2.5"
 winapi = "0.3.9"
 windows = "0.61"

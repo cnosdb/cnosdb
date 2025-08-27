@@ -15,7 +15,7 @@ rand = { workspace = true }
 snafu = { workspace = true, features = ["backtrace"] }
 tokio = { workspace = true }
 tonic = { workspace = true, features = ["transport", "tls"] }
-tower = { workspace = true }
+tower = { workspace = true, features = ["timeout"] }
 arrow-buffer = { workspace = true }
 
 [features]

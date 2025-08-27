@@ -24,7 +24,7 @@ impl PartialOrd for TableWriterMergePlanNode {
             Some(core::cmp::Ordering::Equal) => {}
             ord => return ord,
         }
-        self.schema.fields().partial_cmp(&other.schema.fields())
+        self.schema.fields().partial_cmp(other.schema.fields())
     }
 }
 

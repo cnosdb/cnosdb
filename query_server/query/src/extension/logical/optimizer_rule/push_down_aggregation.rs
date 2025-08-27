@@ -85,7 +85,7 @@ impl OptimizerRule for PushDownAggregation {
             {
                 if aggregate.is_none() && filters.is_empty() {
                     let new_plan = match source
-                        .supports_aggregate_pushdown(&group_expr, &aggr_expr)?
+                        .supports_aggregate_pushdown(group_expr, aggr_expr)?
                     {
                         TableProviderAggregationPushDown::Unsupported => None,
                         TableProviderAggregationPushDown::Ungrouped => {
@@ -153,7 +153,7 @@ impl OptimizerRule for PushDownAggregation {
                                                     *distinct,
                                                     filter.clone(),
                                                     order_by.clone(),
-                                                    null_treatment.clone(),
+                                                    *null_treatment,
                                                     *can_be_pushed_down
                                                 )
                                             },
@@ -177,7 +177,7 @@ impl OptimizerRule for PushDownAggregation {
 
                             // Find distinct group by exprs in the case where we have a grouping set
                             let mut new_required_columns: HashSet<&Column> = HashSet::new();
-                            let all_group_expr: Vec<&Expr> = grouping_set_to_exprlist(&group_expr)?;
+                            let all_group_expr: Vec<&Expr> = grouping_set_to_exprlist(group_expr)?;
                             all_group_expr
                                 .iter()
                                 .for_each(|e| e.add_column_refs(&mut new_required_columns));

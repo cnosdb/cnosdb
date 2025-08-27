@@ -10,9 +10,9 @@ impl OptimizerRule for RejectCrossJoin {
     fn rewrite(
         &self,
         plan: LogicalPlan,
-        optimizer_config: &dyn OptimizerConfig,
+        _optimizer_config: &dyn OptimizerConfig,
     ) -> DFResult<Transformed<LogicalPlan>> {
-        plan.map_children(|child| self.rewrite(child, optimizer_config))
+        plan.map_children(|child| self.rewrite(child, _optimizer_config))
     }
 
     fn name(&self) -> &str {

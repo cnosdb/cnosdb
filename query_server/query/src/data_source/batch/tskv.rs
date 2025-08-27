@@ -330,11 +330,10 @@ impl TableProvider for ClusterTable {
                     (c.cloned(), Arc::new(f.clone()))
                 })
                 .collect::<Vec<_>>();
-            let df_schema = Arc::new(DFSchema::new_with_metadata(
+            Arc::new(DFSchema::new_with_metadata(
                 df_fields_qualified,
                 df_schema.metadata().clone(),
-            )?);
-            df_schema
+            )?)
         } else {
             df_schema
         };

@@ -157,7 +157,7 @@ fn build_external_table_config(
     let file_format: Arc<dyn FileFormat> = match stmt.file_type.as_str() {
         "csv" | "parquet" | "avro" | "json" => {
             let format_factory = state
-                .get_file_format_factory(&stmt.file_type.as_str())
+                .get_file_format_factory(stmt.file_type.as_str())
                 .ok_or_else(|| QueryError::Internal {
                     reason: format!("File format '{}' not registered", &stmt.file_type),
                 })?;

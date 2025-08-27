@@ -28,8 +28,7 @@ pub struct TransformTimeSeriesGenFunc;
 
 impl AnalyzerRule for TransformTimeSeriesGenFunc {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> DFResult<LogicalPlan> {
-        plan.transform_up(|plan| Self::analyze_internal(plan))
-            .data()
+        plan.transform_up(Self::analyze_internal).data()
     }
 
     fn name(&self) -> &str {
@@ -46,7 +45,7 @@ impl TransformTimeSeriesGenFunc {
                 (&expr, Cow::Owned(expr.to_string()))
             };
             if let Expr::ScalarFunction(ScalarFunction { func, args }) = expr {
-                if let Some(ts_gen_func) = TimeSeriesGenFunc::try_from_str(&func.name()) {
+                if let Some(ts_gen_func) = TimeSeriesGenFunc::try_from_str(func.name()) {
                     if let LogicalPlan::Projection(projection) = &plan {
                         if projection.expr.len() != 1 {
                             return Err(datafusion::error::DataFusionError::Plan(

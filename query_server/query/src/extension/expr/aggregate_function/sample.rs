@@ -216,7 +216,7 @@ impl SampleAccumulator {
             }
             // Randomly sample a portion of data from each state
             let num = s.len();
-            let select_num = (num * sample_n + total_num - 1) / total_num;
+            let select_num = (num * sample_n).div_ceil(total_num);
             let indices = generate_unique_random_numbers(select_num as u32, 0, num as u32);
             for i in indices {
                 result.push(s[i as usize].clone());
