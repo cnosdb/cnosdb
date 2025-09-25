@@ -129,7 +129,7 @@ rustyline = "13"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 serde_urlencoded = "0.7.1"
-serial_test = "3.0.0"
+serial_test = "3.2.0"
 simdutf8 = "0.1.4"
 siphasher = "1.0.1"
 skiplist = "0.5.1"

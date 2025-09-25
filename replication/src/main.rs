@@ -1,5 +1,6 @@
 use std::convert::Infallible as StdInfallible;
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use clap::Parser;
@@ -46,7 +47,7 @@ async fn main() -> std::io::Result<()> {
 
     info!("service start option: {:?}", options);
 
-    let data_dir = format!("{}/{}", TEST_DATA_DIR, options.id_port);
+    let data_dir = PathBuf::from(TEST_DATA_DIR).join(options.id_port.to_string());
     let server = create_raft_node(&data_dir, options.id_port).await.unwrap();
     start_server(server).await.unwrap();
 
@@ -62,14 +63,18 @@ fn raft_node_info(id: RaftNodeId) -> RaftNodeInfo {
     }
 }
 
-async fn create_raft_node(dir: &str, id_port: RaftNodeId) -> ReplicationResult<RaftNodeServer> {
+async fn create_raft_node<P: AsRef<Path>>(
+    dir: P,
+    id_port: RaftNodeId,
+) -> ReplicationResult<RaftNodeServer> {
     let info = raft_node_info(id_port);
     let http_addr = info.address.clone();
 
     let max_size = 1024 * 1024 * 1024;
-    let state = StateStorage::open(format!("{}/state", dir), max_size)?;
-    let entry = HeedEntryStorage::open(format!("{}/entry", dir), max_size)?;
-    let engine = HeedApplyStorage::open(format!("{}/engine", dir), max_size)?;
+    let dir = dir.as_ref();
+    let state = StateStorage::open(dir.join("state"), max_size)?;
+    let entry = HeedEntryStorage::open(dir.join("entry"), max_size)?;
+    let engine = HeedApplyStorage::open(dir.join("engine"), max_size)?;
 
     let state = Arc::new(state);
     let entry = Arc::new(RwLock::new(entry));
@@ -305,6 +310,7 @@ impl RaftNodeServer {
 #[cfg(test)]
 #[serial_test::serial]
 mod tests {
+    use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -315,7 +321,7 @@ mod tests {
     use tokio::runtime::Runtime;
     use tokio::task::JoinHandle;
 
-    use crate::{create_raft_node, raft_node_info, start_server, RaftNodeServer};
+    use crate::{create_raft_node, raft_node_info, start_server, RaftNodeServer, TEST_DATA_DIR};
 
     struct TestReplicationServer {
         pub node: Arc<RaftNode>,
@@ -337,14 +343,15 @@ mod tests {
         Arc::new(runtime)
     }
 
-    fn start_servers(
+    fn start_servers<P: AsRef<Path>>(
         rt: Arc<Runtime>,
-        dir: &str,
+        dir: P,
         range: std::ops::RangeInclusive<RaftNodeId>,
     ) -> Vec<TestReplicationServer> {
         let mut servers = vec![];
+        let dir = dir.as_ref();
         for id in range {
-            let data_dir = format!("{}/{}", dir, id);
+            let data_dir = dir.join(id.to_string());
             let server = rt.block_on(create_raft_node(&data_dir, id)).unwrap();
 
             let server_clone = server.clone();
@@ -366,11 +373,10 @@ mod tests {
     #[test]
     fn test_leader_down_and_select_new() {
         println!("----- begin test_leader_down_and_select_new -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
-
         let rt = create_runtime();
-        let dir = format!("{}/test_leader_down_and_select_new", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let test_dir = PathBuf::from(TEST_DATA_DIR).join("test_leader_down_and_select_new");
+        let _ = std::fs::remove_dir_all(&test_dir);
+        let servers = start_servers(rt.clone(), &test_dir, 8000..=8002);
 
         // init 3-nodes cluster
         let members = btreemap! {
@@ -397,17 +403,16 @@ mod tests {
         let leader_id = metrics.current_leader.unwrap_or_default();
         assert!(leader_id == 8001 || leader_id == 8002);
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 
     #[test]
     fn test_add_follower_node() {
         println!("----- begin test_add_follower_node -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
-
         let rt = create_runtime();
-        let dir = format!("{}/test_add_follower_node", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let test_dir = PathBuf::from(TEST_DATA_DIR).join("test_add_follower_node");
+        let _ = std::fs::remove_dir_all(&test_dir);
+        let servers = start_servers(rt.clone(), &test_dir, 8000..=8002);
 
         // start node-0 as cluster
         let members =
@@ -441,17 +446,16 @@ mod tests {
         assert_eq!(metrics.state, ServerState::Follower);
         assert_eq!(metrics.current_leader.unwrap(), 8000);
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 
     #[test]
     fn test_remove_follower_node() {
         println!("----- begin test_remove_follower_node -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
-
         let rt = create_runtime();
-        let dir = format!("{}/test_remove_follower_node", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let test_dir = PathBuf::from(TEST_DATA_DIR).join("test_remove_follower_node");
+        let _ = std::fs::remove_dir_all(&test_dir);
+        let servers = start_servers(rt.clone(), &test_dir, 8000..=8002);
 
         // start 3-nodes as a cluster
         let members = btreemap! {
@@ -485,17 +489,16 @@ mod tests {
         assert_eq!(metrics.state, ServerState::Leader);
         assert_eq!(metrics.replication.unwrap().len(), 2);
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 
     #[test]
     fn test_2node_cluster_remove_follower_node() {
         println!("----- begin test_2node_cluster_remove_follower_node -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
-
         let rt = create_runtime();
-        let dir = format!("{}/test_2node_cluster_remove", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let test_dir = PathBuf::from(TEST_DATA_DIR).join("test_2node_cluster_remove");
+        let _ = std::fs::remove_dir_all(&test_dir);
+        let servers = start_servers(rt.clone(), &test_dir, 8000..=8002);
 
         // start 2-nodes as a cluster
         let members = btreemap! {
@@ -525,17 +528,16 @@ mod tests {
         assert_eq!(metrics.state, ServerState::Leader);
         assert_eq!(metrics.replication.unwrap().len(), 1);
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 
     #[test]
     fn test_promote_follower_to_leader() {
         println!("----- begin test_promote_follower_to_leader -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
-
         let rt = create_runtime();
-        let dir = format!("{}/test_promote_follower_to_leader", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let test_dir = PathBuf::from(TEST_DATA_DIR).join("test_promote_follower_to_leader");
+        let _ = std::fs::remove_dir_all(&test_dir);
+        let servers = start_servers(rt.clone(), &test_dir, 8000..=8002);
 
         // start 3-nodes as a cluster
         let members = btreemap! {
@@ -584,17 +586,16 @@ mod tests {
         assert_eq!(metrics.state, ServerState::Leader);
         assert_eq!(metrics.current_leader.unwrap(), 8002);
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 
     #[test]
     fn test_write_snapshot_add_node() {
         println!("----- begin test_write_snapshot_add_node -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
-
         let rt = create_runtime();
-        let dir = format!("{}/test_write_snapshot_add_node", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let test_dir = PathBuf::from(TEST_DATA_DIR).join("test_write_snapshot_add_node");
+        let _ = std::fs::remove_dir_all(&test_dir);
+        let servers = start_servers(rt.clone(), &test_dir, 8000..=8002);
 
         // start node-0 as cluster
         let members = btreemap! {
@@ -688,6 +689,7 @@ mod tests {
             servers[0].server.node.raft_id(),
             servers[1].server.node.raft_id(),
         };
+        std::thread::sleep(Duration::from_secs(3)); // Why does it probability fail if there is no sleep.
         rt.block_on(servers[0].node.raft_change_membership(members, true))
             .unwrap();
         {
@@ -713,17 +715,16 @@ mod tests {
             assert_eq!(engine.get(&command.key).unwrap().unwrap(), "v_3999");
         }
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 
     #[test]
     fn test_write_snapshot_leader_down() {
         println!("----- begin test_write_snapshot -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
-
         let rt = create_runtime();
-        let dir = format!("{}/test_write_snapshot", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let test_dir = PathBuf::from(TEST_DATA_DIR).join("test_write_snapshot");
+        let _ = std::fs::remove_dir_all(&test_dir);
+        let servers = start_servers(rt.clone(), &test_dir, 8000..=8002);
 
         // start node-0 as cluster
         let members = btreemap! {
@@ -798,16 +799,15 @@ mod tests {
             assert_eq!(engine.get(&command.key).unwrap().unwrap(), "v_1299");
         }
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 
     #[test]
     fn test_write_snapshot_restart() {
         println!("----- begin test_write_snapshot_restart -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
-
         let rt = create_runtime();
-        let dir = format!("{}/test_write_snapshot_restart", crate::TEST_DATA_DIR);
+        let test_dir = PathBuf::from(TEST_DATA_DIR).join("test_write_snapshot_restart");
+        let _ = std::fs::remove_dir_all(&test_dir);
 
         #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
         struct RequestCommand {
@@ -819,7 +819,7 @@ mod tests {
             value: "test_val".to_string(),
         };
         {
-            let servers = start_servers(rt.clone(), &dir, 8000..=8000);
+            let servers = start_servers(rt.clone(), &test_dir, 8000..=8000);
 
             // start node-0 as cluster
             let members = btreemap! {
@@ -850,7 +850,7 @@ mod tests {
         println!("----------------------*********-------------------------");
 
         std::thread::sleep(Duration::from_secs(1));
-        let servers = start_servers(rt.clone(), &dir, 8000..=8000);
+        let servers = start_servers(rt.clone(), &test_dir, 8000..=8000);
         // write data 900 times
         for i in 1000..1300 {
             command.value = format!("v_{}", i);
@@ -868,11 +868,10 @@ mod tests {
     #[test]
     fn continuous_operation_testing() {
         println!("----- begin continuous_operation_testing -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
-
         let rt = create_runtime();
-        let dir = format!("{}/continuous_operation_testing", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let test_dir = PathBuf::from(TEST_DATA_DIR).join("continuous_operation_testing");
+        let _ = std::fs::remove_dir_all(&test_dir);
+        let servers = start_servers(rt.clone(), &test_dir, 8000..=8002);
 
         // start node-0 as a cluster
         let members = btreemap! {
@@ -934,6 +933,6 @@ mod tests {
         assert_eq!(metrics.current_leader.unwrap(), 8001);
         assert_eq!(metrics.replication.unwrap().len(), 1);
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 }
