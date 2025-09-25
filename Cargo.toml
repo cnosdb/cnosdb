@@ -110,7 +110,7 @@ opentelemetry_sdk = "0.21"
 os_info = { version = "3" }
 parking_lot = { version = "0.12.1" }
 paste = "1.0"
-pco = "0.2.3"
+pco = "0.4.6"
 pin-project = "1.1.4"
 pprof = { version = "0.13.0", features = ["flamegraph", "protobuf-codec", "frame-pointer"] }
 proc-macro2 = "1.0.85"
