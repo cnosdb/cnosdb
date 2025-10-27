@@ -11,6 +11,7 @@ use super::reader::WalRecordData;
 use crate::error::{DecodeSnafu, WalTruncatedSnafu};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
+use crate::file_utils::for_each_wal_file_in_dir;
 use crate::vnode_store::VnodeStorage;
 use crate::wal::reader::WalReader;
 use crate::wal::VnodeWal;
@@ -37,7 +38,9 @@ impl RaftEntryStorage {
         }
     }
 
-    /// Read WAL files to recover
+    /// Read WAL files to recover,
+    /// records until the last applied log-id `apply_id` will be write into `vnode_store`,
+    /// then mark all records after `apply_id` as deleted.
     pub async fn recover(
         &mut self,
         apply_id: Option<LogId<u64>>,
@@ -151,6 +154,7 @@ struct WalFileMeta {
     min_seq: u64,
     max_seq: u64,
     reader: WalReader,
+    /// Raft entry index, maps of record-seq-no to file-position.
     entry_index: Vec<(u64, u64)>, // seq -> pos
 }
 
@@ -173,6 +177,7 @@ impl WalFileMeta {
         }
     }
 
+    /// Insert a new raft entry information to the entry index.
     fn mark_entry(&mut self, index: u64, pos: u64) {
         if self.min_seq == u64::MAX || self.min_seq > index {
             self.min_seq = index
@@ -249,6 +254,7 @@ impl WalFileMeta {
         Ok(None)
     }
 }
+
 struct RaftEntryStorageInner {
     wal: VnodeWal,
     files_meta: Vec<WalFileMeta>,
@@ -256,6 +262,7 @@ struct RaftEntryStorageInner {
 }
 
 impl RaftEntryStorageInner {
+    /// Mark a new raft entry information to the entry index.
     async fn mark_write_wal(&mut self, entry: RaftEntry, wal_id: u64, pos: u64) -> TskvResult<()> {
         let index = entry.log_id.index;
         if let Some(item) = self
@@ -425,12 +432,25 @@ impl RaftEntryStorageInner {
     }
 
     /// Read WAL files to recover: engine, index, cache.
+    ///
+    /// Update metrics:
+    /// - wal_file_size_old
     pub async fn recover(
         &mut self,
         apply_id: Option<LogId<u64>>,
         vnode_store: &mut VnodeStorage,
     ) -> TskvResult<()> {
-        let wal_files = LocalFileSystem::list_file_names(self.wal.wal_dir());
+        let mut wal_files = vec![];
+        let mut total_file_size = 0_u64;
+        for_each_wal_file_in_dir(self.wal.wal_dir(), |p, m| {
+            if let Some(n) = p.file_name().map(|n| n.to_string_lossy()) {
+                wal_files.push(n.into_owned());
+                total_file_size += m.len()
+            }
+        })?;
+        total_file_size -= self.wal.current_wal_size(); // subtract currently writing wal size
+        self.wal.metrics.wal_file_size_old.set(total_file_size);
+
         for file_name in wal_files {
             // If file name cannot be parsed to wal id, skip that file.
             let wal_id = match file_utils::get_wal_file_id(&file_name) {
@@ -535,6 +555,7 @@ mod test {
     use std::sync::atomic::AtomicUsize;
     use std::sync::{atomic, Arc};
 
+    use metrics::metric_register::MetricsRegister;
     use models::schema::database_schema::make_owner;
     use openraft::EntryPayload;
     use replication::apply_store::HeedApplyStorage;
@@ -546,6 +567,7 @@ mod test {
 
     use crate::file_system::async_filesystem::LocalFileSystem;
     use crate::file_system::FileSystem;
+    use crate::wal::metrics::WalMetricsFactory;
     use crate::wal::reader::WalRecordData;
     use crate::wal::wal_store::{RaftEntry, RaftEntryStorage};
     use crate::wal::VnodeWal;
@@ -562,15 +584,19 @@ mod test {
             wal_sync: false,
         };
 
-        VnodeWal::new(Arc::new(wal_option), owner, 1234).await
+        let empty_labels: [(&'static str, String); 0] = [];
+        let metrics_register = MetricsRegister::new(empty_labels);
+        let wal_metrics_builder = WalMetricsFactory::new(&metrics_register);
+        let wal_metrics = wal_metrics_builder.build(owner.clone(), 1234, 1);
+
+        VnodeWal::new(Arc::new(wal_option), owner, 1234, wal_metrics).await
     }
 
     #[tokio::test]
-    async fn test_wal_entry_storage_restart() {
-        trace::debug!("----------------------------------------");
-        let dir = PathBuf::from("/tmp/test/wal/raft_entry_restart1");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    async fn test_wal_raft_entry_storage_restart() {
+        let dir = "/tmp/test/wal/raft/entry_store_restart";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
 
         // append entry
         let wal = get_vnode_wal(&dir).await.unwrap();
@@ -603,7 +629,7 @@ mod test {
 
         // restart wal
         println!("----------------- begin restart ............");
-        let wal = get_vnode_wal(&dir).await.unwrap();
+        let wal = get_vnode_wal(dir).await.unwrap();
         let wal_dir = wal.wal_dir.clone();
         let mut storage = RaftEntryStorage::new(wal);
 
@@ -640,11 +666,10 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_raft_wal_entry_storage() {
-        trace::debug!("----------------------------------------");
-        let dir = PathBuf::from("/tmp/test/wal/raft_entry");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    async fn test_wal_raft_entry_storage() {
+        let dir = "/tmp/test/wal/raft/entry_store";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
 
         let wal = get_vnode_wal(dir).await.unwrap();
         let mut storage = RaftEntryStorage::new(wal);
@@ -692,8 +717,7 @@ mod test {
         }
     }
 
-    pub async fn get_node_store(dir: impl AsRef<Path>) -> Arc<NodeStorage> {
-        trace::debug!("----------------------------------------");
+    async fn get_node_store(dir: impl AsRef<Path>) -> Arc<NodeStorage> {
         let dir = dir.as_ref();
         let wal = get_vnode_wal(dir).await.unwrap();
         let entry = RaftEntryStorage::new(wal);
@@ -720,7 +744,7 @@ mod test {
 
     #[test]
     fn test_wal_raft_storage_with_openraft_cases() {
-        let dir = PathBuf::from("/tmp/test/wal/raft/1");
+        let dir = PathBuf::from("/tmp/test/wal/raft/storage_with_openraft_cases");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 

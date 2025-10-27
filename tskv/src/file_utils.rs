@@ -5,7 +5,7 @@ use regex::Regex;
 use snafu::ResultExt;
 use tokio::fs;
 
-use crate::error::{IOSnafu, InvalidFileNameSnafu};
+use crate::error::{IOSnafu, InvalidFileNameSnafu, ReadFileSnafu};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
 use crate::TskvResult;
@@ -218,63 +218,50 @@ where
     Some((PathBuf::from(max_file_name), max_id))
 }
 
-/* -------------------------------------------------------------------------------------- */
-
-pub fn make_file_name(id: u64, suffix: &str) -> String {
-    format!("_{:06}.{}", id, suffix)
-}
-
-pub fn make_file_path(dir: impl AsRef<Path>, id: u64, suffix: &str) -> PathBuf {
-    dir.as_ref().join(make_file_name(id, suffix))
-}
-
-pub fn get_file_id_range(dir: impl AsRef<Path>, suffix: &str) -> Option<(u64, u64)> {
-    let file_names = LocalFileSystem::list_file_names(dir);
-    if file_names.is_empty() {
-        return None;
-    }
-
-    let pattern = Regex::new(&(r"_\d{6}\.".to_string() + suffix)).unwrap();
-    let get_file_id = |file_name: &str| -> TskvResult<u64> {
-        if !pattern.is_match(file_name) {
-            return Err(InvalidFileNameSnafu {
-                file_name: file_name.to_string(),
-                message: "index binlog file name does not contain an id".to_string(),
-            }
-            .build());
-        }
-
-        let file_number = &file_name[1..7];
-        file_number.parse::<u64>().map_err(|_| {
-            InvalidFileNameSnafu {
-                file_name: file_name.to_string(),
-                message: "index binlog file name contains an invalid id".to_string(),
-            }
-            .build()
-        })
-    };
-
-    let mut max_id = 0;
-    let mut min_id = u64::MAX;
-    let mut is_found = false;
-    for file_name in file_names.iter() {
-        if let Ok(id) = get_file_id(file_name) {
-            is_found = true;
-            if max_id < id {
-                max_id = id;
-            }
-
-            if min_id > id {
-                min_id = id;
-            }
+/// Iterate all files in a directory and call `f` for each file that matches `filter`.
+fn for_each_file_in_dir<P, F>(dir: impl AsRef<Path>, filter: P, mut f: F) -> TskvResult<usize>
+where
+    P: Fn(std::ffi::OsString) -> bool,
+    F: FnMut(PathBuf, std::fs::Metadata),
+{
+    let read_dir_result = std::fs::read_dir(&dir).with_context(|_| ReadFileSnafu {
+        path: dir.as_ref().to_path_buf(),
+    })?;
+    let mut dir_entries = Vec::new();
+    for ret in read_dir_result {
+        let entry = ret.with_context(|_| ReadFileSnafu {
+            path: dir.as_ref().to_path_buf(),
+        })?;
+        if entry
+            .file_type()
+            .is_ok_and(|t| t.is_file() && filter(entry.file_name()))
+        {
+            dir_entries.push(entry);
         }
     }
+    dir_entries.sort_by_cached_key(|a| a.file_name().to_string_lossy().to_string());
 
-    if !is_found {
-        return None;
+    let mut total = 0;
+    for entry in dir_entries {
+        let metadata = entry
+            .metadata()
+            .with_context(|_| ReadFileSnafu { path: entry.path() })?;
+        f(entry.path(), metadata);
+        total += 1;
     }
+    Ok(total)
+}
 
-    Some((min_id, max_id))
+/// Iterate all WAL files in a directory and call `f` for each file.
+pub fn for_each_wal_file_in_dir<F>(dir: impl AsRef<Path>, f: F) -> TskvResult<usize>
+where
+    F: FnMut(PathBuf, std::fs::Metadata),
+{
+    for_each_file_in_dir(
+        dir,
+        |file_name| check_wal_file_name(file_name.to_string_lossy().as_ref()),
+        f,
+    )
 }
 
 #[cfg(test)]
@@ -285,6 +272,7 @@ mod test {
     use crate::file_utils::{
         check_wal_file_name, get_summary_file_id, get_wal_file_id, make_wal_file,
     };
+    use crate::TskvResult;
 
     #[test]
     fn test_get_file_id() {
@@ -300,21 +288,39 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::type_complexity)]
     fn test_make_file() {
-        let path = PathBuf::from("/tmp/test".to_string());
-        {
-            let summary_file_path = make_summary_file(&path, 0);
-            let summary_file_name = summary_file_path.file_name().unwrap().to_str().unwrap();
-            assert!(check_summary_file_name(summary_file_name));
-            let summary_file_id = get_summary_file_id(summary_file_name).unwrap();
-            assert_eq!(summary_file_id, 0);
-        }
-        {
-            let wal_file_path = make_wal_file(&path, 0);
-            let wal_file_name = wal_file_path.file_name().unwrap().to_str().unwrap();
-            assert!(check_wal_file_name(wal_file_name));
-            let wal_file_id = get_wal_file_id(wal_file_name).unwrap();
-            assert_eq!(wal_file_id, 0);
+        let test_dir = PathBuf::from("/tmp/test");
+
+        let seq_numbers = [0, 1, 123, 123456 /*1234567*/];
+        let functions_to_test: [(
+            &str,
+            Box<dyn Fn(&PathBuf, u64) -> PathBuf>,
+            Box<dyn Fn(&str) -> bool>,
+            Box<dyn Fn(&str) -> TskvResult<u64>>,
+        ); 2] = [
+            (
+                "summary",
+                Box::new(|p, s| make_summary_file(p, s)),
+                Box::new(check_summary_file_name),
+                Box::new(get_summary_file_id),
+            ),
+            (
+                "wal",
+                Box::new(|p, s| make_wal_file(p, s)),
+                Box::new(check_wal_file_name),
+                Box::new(get_wal_file_id),
+            ),
+        ];
+        for (file_type, make_file, check_file_name, get_file_id) in functions_to_test {
+            let dir = test_dir.join(file_type);
+            for seq_no in seq_numbers {
+                let file_path = make_file(&dir, seq_no);
+                let file_name = file_path.file_name().unwrap().to_str().unwrap();
+                assert!(check_file_name(file_name), "path: {file_path:?}");
+                let file_id = get_file_id(file_name).unwrap();
+                assert_eq!(file_id, seq_no, "path: {file_path:?}");
+            }
         }
     }
 }
