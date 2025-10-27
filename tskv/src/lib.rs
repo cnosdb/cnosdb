@@ -27,7 +27,6 @@ pub use crate::kvcore::TsKv;
 // pub use crate::tsm::print_tsm_statistics;
 pub use crate::tsfamily::summary::print_summary_statistics;
 use crate::tsfamily::super_version::SuperVersion;
-pub use crate::wal::print_wal_statistics;
 
 pub mod byte_utils;
 mod compaction;

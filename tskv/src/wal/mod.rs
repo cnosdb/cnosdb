@@ -35,7 +35,8 @@
 //! +------------+---------------+--------------+--------------+
 //! ```
 
-mod reader;
+pub mod metrics;
+pub mod reader;
 pub mod wal_store;
 pub mod writer;
 
@@ -53,7 +54,7 @@ use self::writer::WalWriter;
 use crate::error::{CommonSnafu, DecodeSnafu, EncodeSnafu};
 use crate::kv_option::WalOptions;
 use crate::tsm::codec::{get_str_codec, StringCodec};
-pub use crate::wal::reader::print_wal_statistics;
+use crate::wal::metrics::WalMetrics;
 use crate::{error, file_utils, TskvResult};
 
 /// 9 = type(1) + sequence(8)
@@ -99,26 +100,34 @@ pub struct VnodeWal {
     owner: Arc<String>,
     vnode_id: VnodeId,
     current_wal: WalWriter,
+    metrics: Arc<WalMetrics>,
 }
 
 impl VnodeWal {
+    /// Create new VnodeWal instance, open new WAL writer.
+    ///
+    /// Update metrics:
+    /// - wal_file_size_current
     pub async fn new(
         config: Arc<WalOptions>,
         owner: Arc<String>,
         vnode_id: VnodeId,
+        metrics: Arc<WalMetrics>,
     ) -> TskvResult<Self> {
         let wal_dir = config.wal_dir(&owner, vnode_id);
         let writer_file = Self::open_writer(config.clone(), &wal_dir).await?;
+        metrics.wal_file_size_current.set(writer_file.size());
         Ok(Self {
             config,
             wal_dir,
             owner,
             vnode_id,
             current_wal: writer_file,
+            metrics,
         })
     }
 
-    pub async fn open_writer(config: Arc<WalOptions>, wal_dir: &Path) -> TskvResult<WalWriter> {
+    async fn open_writer(config: Arc<WalOptions>, wal_dir: &Path) -> TskvResult<WalWriter> {
         let next_file_id =
             match file_utils::get_max_sequence_file_name(wal_dir, file_utils::get_wal_file_id) {
                 Some((_, id)) => id,
@@ -132,6 +141,11 @@ impl VnodeWal {
         Ok(writer_file)
     }
 
+    /// Check if the size of current WAL file exceeds the `max_file_size`,
+    /// if it is, open new WAL writer and close the old WAL writer.
+    ///
+    /// Update metrics:
+    /// - wal_file_size_current
     async fn roll_wal_file(&mut self, max_file_size: u64) -> TskvResult<()> {
         if self.current_wal.size() > max_file_size {
             trace::info!("WAL '{:?}' is full", self.current_wal.path());
@@ -140,36 +154,54 @@ impl VnodeWal {
             let new_file_name = file_utils::make_wal_file(&self.wal_dir, new_file_id);
 
             let new_file = WalWriter::open(self.config.clone(), new_file_id, new_file_name).await?;
+            self.metrics.wal_file_size_current.set(new_file.size());
 
             let mut old_file = std::mem::replace(&mut self.current_wal, new_file);
+            let new_old_wal_size = self.metrics.wal_file_size_old.fetch() + old_file.size();
+            self.metrics.wal_file_size_old.set(new_old_wal_size);
             old_file.close().await?;
         }
         Ok(())
     }
 
+    /// Truncate WAL file with the `file_id` at the `pos`.
+    ///
+    /// Update metrics:
+    /// - wal_file_size_current
     pub async fn truncate_wal_file(&mut self, file_id: u64, pos: u64) -> TskvResult<()> {
-        if self.current_wal_id() == file_id {
+        if self.current_wal.id() == file_id {
             self.current_wal.truncate(pos).await;
             self.current_wal.sync().await?;
+            self.metrics
+                .wal_file_size_current
+                .set(self.current_wal.size());
             return Ok(());
         }
 
         let file_name = file_utils::make_wal_file(&self.wal_dir, file_id);
-        let mut new_file = WalWriter::open(self.config.clone(), file_id, file_name).await?;
-        new_file.truncate(pos).await;
-        new_file.sync().await?;
+        let mut old_file = WalWriter::open(self.config.clone(), file_id, file_name).await?;
+        let old_file_size = old_file.size();
+        old_file.truncate(pos).await;
+        old_file.sync().await?;
+        let old_file_size =
+            self.metrics.wal_file_size_old.fetch() - old_file_size.saturating_sub(old_file.size());
+        self.metrics.wal_file_size_old.set(old_file_size);
 
         Ok(())
     }
 
     pub async fn rollback_wal_writer(&mut self, del_ids: &[u64]) -> TskvResult<()> {
+        let mut total_file_size = self.metrics.wal_file_size_old.fetch();
         for wal_id in del_ids {
             let file_path = file_utils::make_wal_file(self.wal_dir(), *wal_id);
             trace::info!("Removing wal file '{}'", file_path.display());
+            let _ = std::fs::metadata(&file_path)
+                .inspect(|m| total_file_size = total_file_size.saturating_sub(m.len()));
             if let Err(e) = tokio::fs::remove_file(&file_path).await {
                 trace::error!("Failed to remove file '{}': {:?}", file_path.display(), e);
             }
         }
+        self.metrics.wal_file_size_old.set(total_file_size);
 
         let new_writer = VnodeWal::open_writer(self.config.clone(), self.wal_dir()).await?;
         let _ = std::mem::replace(&mut self.current_wal, new_writer);
@@ -177,6 +209,11 @@ impl VnodeWal {
         Ok(())
     }
 
+    /// Write `raft_entry` to current WAL file as a record,
+    /// return `id` and `pos` of the record.
+    ///
+    /// Update metrics:
+    /// - wal_file_size_current
     async fn write_raft_entry(
         &mut self,
         raft_entry: &wal_store::RaftEntry,
@@ -185,15 +222,18 @@ impl VnodeWal {
             trace::warn!("roll wal file failed: {}", err);
         }
 
-        let wal_id = self.current_wal_id();
-        let pos = self.current_wal_size();
+        let wal_id = self.current_wal.id();
+        let pos = self.current_wal.size();
         self.current_wal.append_raft_entry(raft_entry).await?;
+        self.metrics
+            .wal_file_size_current
+            .set(self.current_wal.size());
 
         Ok((wal_id, pos))
     }
 
     pub async fn wal_reader(&mut self, wal_id: u64) -> TskvResult<WalReader> {
-        if wal_id == self.current_wal_id() {
+        if wal_id == self.current_wal.id() {
             // Use the same wal as the writer.
             let reader = self.current_wal.new_reader().await?;
             Ok(reader)
@@ -211,6 +251,7 @@ impl VnodeWal {
 
     /// Close current record file, return count of bytes appended as footer.
     pub async fn close(&mut self) -> TskvResult<()> {
+        self.metrics.remove();
         self.current_wal.close().await
     }
 

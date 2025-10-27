@@ -2,6 +2,7 @@ use std::env;
 use std::str::FromStr;
 
 use models::codec::Encoding;
+use tskv::wal::reader::print_wal_statistics;
 
 const ARG_PRINT: &str = "print"; // To print something
 const ARG_TSM: &str = "--tsm"; // To print a .tsm file
@@ -93,7 +94,7 @@ async fn main() {
                     panic!("invalid wal.compress: {e}");
                 }
             };
-            tskv::print_wal_statistics(p, wal_compress).await;
+            print_wal_statistics(p, wal_compress).await;
         }
     }
 }

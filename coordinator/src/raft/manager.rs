@@ -19,6 +19,7 @@ use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 use tracing::info;
+use tskv::wal::metrics::WalMetricsFactory;
 use tskv::wal::wal_store::RaftEntryStorage;
 use tskv::{wal, EngineRef};
 
@@ -38,6 +39,7 @@ pub struct RaftNodesManager {
     raft_nodes: Arc<RwLock<MultiRaft>>,
 
     register: Arc<MetricsRegister>,
+    wal_metrics_factory: Arc<WalMetricsFactory>,
 }
 
 impl RaftNodesManager {
@@ -51,11 +53,14 @@ impl RaftNodesManager {
         let state =
             StateStorage::open(path, config.cluster.lmdb_max_map_size.try_into().unwrap()).unwrap();
 
+        let wal_metrics_factory = WalMetricsFactory::new(register.as_ref());
+
         Self {
             meta,
             config,
             kv_inst,
             register,
+            wal_metrics_factory: Arc::new(wal_metrics_factory),
             raft_state: Arc::new(state),
             raft_nodes: Arc::new(RwLock::new(MultiRaft::new())),
         }
@@ -633,9 +638,12 @@ impl RaftNodesManager {
             .context(TskvSnafu)?;
 
         // 2. open raft logs storage
-        let owner = make_owner(tenant, db_name);
+        let owner = Arc::new(make_owner(tenant, db_name));
         let wal_option = tskv::kv_option::WalOptions::from(&self.config);
-        let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id)
+        let wal_metrics = self
+            .wal_metrics_factory
+            .build(owner.clone(), vnode_id, group_id);
+        let wal = wal::VnodeWal::new(Arc::new(wal_option), owner, vnode_id, wal_metrics)
             .await
             .context(TskvSnafu)?;
         let mut raft_logs = RaftEntryStorage::new(wal);
