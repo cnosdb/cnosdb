@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use heed::types::*;
-use heed::{Database, Env, EnvFlags};
+use heed::{Database, Env};
 use openraft::{LogId, StoredMembership, Vote};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
@@ -75,10 +75,12 @@ impl StateStorage {
     pub fn open(path: impl AsRef<Path>, size: usize) -> ReplicationResult<Self> {
         fs::create_dir_all(&path).context(IOErrSnafu)?;
 
+        // No `EnvFlags::NO_SYNC` here: this env holds the raft vote, membership,
+        // last-applied and purge point. Openraft requires the vote to be on disk
+        // before `save_vote` returns — with NO_SYNC a commit only reaches the page
+        // cache, so a crash can roll the vote back and let this node vote twice in
+        // the same term, which is a direct violation of raft election safety.
         let mut env_builder = heed::EnvOpenOptions::new();
-        unsafe {
-            env_builder.flags(EnvFlags::NO_SYNC);
-        }
 
         let env = unsafe {
             env_builder

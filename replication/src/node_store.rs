@@ -402,6 +402,14 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
         logs.append(&entries)
             .await
             .map_err(|e| StorageIOError::write_logs(&e))?;
+        // Openraft treats a successful return as "these entries are on disk" and
+        // may commit them once a quorum acknowledges. The WAL writer only fsyncs
+        // per record when `wal_sync` is enabled (it defaults to false), and the
+        // only other sync is at graceful shutdown, so without this the entries
+        // live in the page cache and a crash drops already-committed data.
+        logs.sync()
+            .await
+            .map_err(|e| StorageIOError::write_logs(&e))?;
 
         Ok(())
     }
@@ -413,10 +421,14 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
             log_id
         );
 
-        self.raft_logs
-            .write()
+        let mut logs = self.raft_logs.write().await;
+        logs.del_after(log_id.index)
             .await
-            .del_after(log_id.index)
+            .map_err(|e| StorageIOError::write_logs(&e))?;
+        // Must be durable before returning: if the truncation is lost in a crash
+        // the conflicting tail reappears, and `get_log_state` then reports a
+        // last_log_id beyond what this node actually accepted from the leader.
+        logs.sync()
             .await
             .map_err(|e| StorageIOError::write_logs(&e))?;
 
