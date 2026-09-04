@@ -2206,10 +2206,11 @@ checksum = "95765f67b4b18863968b4a1bd5bb576f732b29a4a28c7cd84c09fa3e2875f33c"
 
 [[package]]
 name = "fastalp"
-version = "0.1.38"
+version = "0.1.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0805817e81aecda2022b5f530a2a641e9dcd610c8a39df362f0622d2426fbc65"
+checksum = "e25e7bfb5407c30e0f22524009c76231286b47c96c23929843f67bda0ff7009e"
 dependencies = [
+ "fearless_simd",
  "thiserror 2.0.20",
 ]
 
@@ -2229,6 +2230,12 @@ dependencies = [
  "rustix 1.0.5",
  "windows-sys 0.59.0",
 ]
+
+[[package]]
+name = "fearless_simd"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4beca3cb2444e3304ac30843cc091f44ed58932353cd492ce740067bfce6b12"
 
 [[package]]
 name = "figment"
