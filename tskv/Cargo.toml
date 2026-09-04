@@ -32,6 +32,7 @@ crc32fast = { workspace = true }
 datafusion = { workspace = true }
 datafusion-proto = { workspace = true }
 dircpy = { workspace = true }
+fastalp = { workspace = true }
 flatbuffers = { workspace = true }
 flate2 = { workspace = true }
 futures = { workspace = true, features = ["std", "thread-pool"] }
@@ -95,3 +96,7 @@ name = "kvcore_bench"
 [[bench]]
 harness = false
 name = "data_merge"
+
+[[bench]]
+harness = false
+name = "float_codec_bench"
