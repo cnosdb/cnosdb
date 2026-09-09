@@ -2206,9 +2206,9 @@ checksum = "95765f67b4b18863968b4a1bd5bb576f732b29a4a28c7cd84c09fa3e2875f33c"
 
 [[package]]
 name = "fastalp"
-version = "0.1.41"
+version = "0.1.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e25e7bfb5407c30e0f22524009c76231286b47c96c23929843f67bda0ff7009e"
+checksum = "4c5bf0eb3880452fc153cd33fb1c38eb5b26bed378da065d3b1e678593807811"
 dependencies = [
  "fearless_simd",
  "thiserror 2.0.20",
