@@ -222,7 +222,7 @@ fn median(nums: &[f64]) -> f64 {
     nums.sort_unstable_by(|a, b| a.partial_cmp(b).expect("NaN should not appear here"));
     let len = nums.len();
     let mid = len / 2;
-    if len % 2 == 0 {
+    if len.is_multiple_of(2) {
         (nums[mid - 1] + nums[mid]) / 2.0
     } else {
         nums[mid]

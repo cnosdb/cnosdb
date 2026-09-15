@@ -262,10 +262,9 @@ fn get_field_metadata(
     e: &Arc<dyn PhysicalExpr>,
     input_schema: &Schema,
 ) -> Option<HashMap<String, String>> {
-    let name = if let Some(column) = e.as_any().downcast_ref::<Column>() {
+    let name = {
+        let column = e.as_any().downcast_ref::<Column>()?;
         column.name()
-    } else {
-        return None;
     };
 
     input_schema

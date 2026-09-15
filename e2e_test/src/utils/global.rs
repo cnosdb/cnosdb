@@ -211,8 +211,7 @@ impl Ipv4PortPicker {
                 return Ok(SocketAddrV4::new(host, port));
             }
         }
-        Err(IoError::new(
-            IoErrorKind::Other,
+        Err(IoError::other(
             format!("No available ports in {:?}", self.range),
         ))
     }

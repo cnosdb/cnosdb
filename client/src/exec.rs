@@ -201,12 +201,11 @@ async fn exec_and_print(
                     double_quote = !double_quote;
                 }
             }
-            ';' => {
-                if !double_quote && !single_quote {
+            ';'
+                if !double_quote && !single_quote => {
                     strs.push(&sql[last_idx..sql_idx]);
                     last_idx = sql_idx + 1;
                 }
-            }
             _ => (),
         };
         sql_idx += ch.len_utf8();

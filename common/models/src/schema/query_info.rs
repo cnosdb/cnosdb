@@ -36,7 +36,7 @@ impl TryFrom<Vec<u8>> for QueryId {
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
         if bytes.len() != 8 {
-            return Err(format!("Incorrect content: {:?}", &bytes));
+            return Err(format!("Incorrect content: {:?}", bytes));
         }
 
         let len_bytes: [u8; 8] = unsafe { bytes[0..8].try_into().unwrap_unchecked() };

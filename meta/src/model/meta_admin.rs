@@ -499,7 +499,7 @@ impl AdminMeta {
 
     pub async fn data_nodes(&self) -> Vec<NodeInfo> {
         let mut nodes = vec![];
-        for (_, val) in self.data_nodes.read().iter() {
+        for val in self.data_nodes.read().values() {
             nodes.push(val.clone())
         }
 
@@ -847,7 +847,7 @@ impl AdminMeta {
 
     pub async fn expired_bucket(&self) -> Vec<ExpiredBucketInfo> {
         let mut list = vec![];
-        for (_key, val) in self.tenants.write().iter() {
+        for val in self.tenants.write().values() {
             list.append(&mut val.expired_bucket());
         }
         list
@@ -855,7 +855,7 @@ impl AdminMeta {
 
     pub async fn pre_create_bucket(&self, ts: i64) -> Vec<PreCreateBucketInfo> {
         let mut list = vec![];
-        for (_key, val) in self.tenants.write().iter() {
+        for val in self.tenants.write().values() {
             list.append(&mut val.pre_create_bucket(ts));
         }
         list

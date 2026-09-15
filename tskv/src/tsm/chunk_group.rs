@@ -143,7 +143,7 @@ impl ChunkGroupMeta {
 
     pub fn time_range(&self) -> TimeRange {
         let mut time_range = TimeRange::none();
-        for (_, table) in self.tables.iter() {
+        for table in self.tables.values() {
             time_range.merge(&table.time_range);
         }
         time_range

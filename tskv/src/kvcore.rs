@@ -124,7 +124,7 @@ impl TsKv {
 
     async fn sync_indexs(&self) -> IndexResult<()> {
         let vs_guard = self.version_set.read().await;
-        for (_, vnode_storage) in vs_guard.vnodes().iter() {
+        for vnode_storage in vs_guard.vnodes().values() {
             vnode_storage.sync_index().await;
         }
         Ok(())

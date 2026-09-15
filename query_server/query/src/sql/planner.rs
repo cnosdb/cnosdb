@@ -2800,7 +2800,7 @@ fn show_series_projection(
         let is_null_expr = Box::new(column_expr.clone().is_null());
         let when_then_expr = vec![(is_null_expr, Box::new(lit(ScalarValue::Null)))];
         let else_expr = Some(Box::new(Expr::BinaryExpr(BinaryExpr {
-            left: Box::new(lit(format!("{}=", &tag.name))),
+            left: Box::new(lit(format!("{}=", tag.name))),
             op: Operator::StringConcat,
             right: column_expr,
         })));

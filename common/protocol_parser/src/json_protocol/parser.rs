@@ -115,7 +115,7 @@ pub fn parse_json_to_eslog(mut json_chunk: Vec<&str>) -> Result<Vec<JsonProtocol
     */
     let n = json_chunk.len();
     let mut logs = vec![];
-    if n % 2 != 0 {
+    if !n.is_multiple_of(2) {
         return Err(Error::InvaildSyntax {
             content: "parse_json_to_eslog, es log must be a pair of command and fields".to_string(),
         });

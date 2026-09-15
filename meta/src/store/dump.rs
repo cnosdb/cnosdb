@@ -37,7 +37,7 @@ pub async fn dump_impl(
 
     let mut users_used: BTreeSet<String> = BTreeSet::new();
     let mut tenant_object_dump = vec![];
-    for (_, tenant) in tenants.iter() {
+    for tenant in tenants.values() {
         if tenant_filter.is_some_and(|f| tenant.name().eq(f)) || tenant_filter.is_none() {
             tenant_object_dump.push(format!("-- Dump Tenant {} Object", tenant.name()));
             tenant_object_dump.append(&mut dump_tenant(
@@ -52,7 +52,7 @@ pub async fn dump_impl(
 
     let mut res = vec![];
     res.push("-- Dump Global Object".to_string());
-    for (_, tenant) in tenants.iter() {
+    for tenant in tenants.values() {
         if tenant.name().eq_ignore_ascii_case(DEFAULT_CATALOG) {
             continue;
         }
@@ -99,7 +99,7 @@ pub fn dump_tenant(
         .collect::<BTreeMap<_, _>>();
 
     // dump database
-    for (_name, db) in dbs.iter() {
+    for db in dbs.values() {
         if db.tenant_name().eq_ignore_ascii_case(DEFAULT_CATALOG)
             && db.database_name().eq_ignore_ascii_case(DEFAULT_DATABASE)
         {
@@ -114,7 +114,7 @@ pub fn dump_tenant(
         .children_data::<CustomTenantRole<Oid>>(&roles_key)?
         .into_iter()
         .collect::<BTreeMap<_, _>>();
-    for (_, role) in roles.iter() {
+    for role in roles.values() {
         res.append(&mut role_to_sql(role)?)
     }
 

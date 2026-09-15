@@ -182,11 +182,11 @@ impl WriterBuilder {
             .map(|array| match array.data_type() {
                 DataType::Utf8 | DataType::Float64 | DataType::Timestamp(_, _) => Ok(()),
                 type_ => {
-                    return Err(QueryError::DataType {
+                    Err(QueryError::DataType {
                         data_type: type_.to_string(),
                         column: array.name().to_string(),
                         prompt: "only support data type: string(label)/float(sample value)/timestamp(time)".to_string(),
-                    });
+                    })
                 }
             })
             .collect::<QueryResult<Vec<_>>>()?;

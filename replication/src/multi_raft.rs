@@ -106,7 +106,7 @@ impl MultiRaft {
 
     async fn trigger_snapshot_purge_logs(nodes: Arc<RwLock<MultiRaft>>) {
         let nodes = nodes.read().await;
-        for (_, item) in nodes.nodes.iter() {
+        for item in nodes.nodes.values() {
             if let Status::Shutdown(_) = item.stat {
                 continue;
             }
@@ -138,7 +138,7 @@ impl MultiRaft {
 
     async fn update_metrics_values(nodes: Arc<RwLock<MultiRaft>>) {
         let mut nodes = nodes.write().await;
-        for (_, item) in nodes.nodes.iter_mut() {
+        for item in nodes.nodes.values_mut() {
             if let Ok(metrics) = item.raft.metrics().await {
                 item.metrics.update_values(metrics);
             }
@@ -168,7 +168,7 @@ impl MultiRaft {
     }
 
     pub async fn sync_wal_writer(&self) {
-        for (_, raft_node_wrapper) in self.nodes.iter() {
+        for raft_node_wrapper in self.nodes.values() {
             raft_node_wrapper.raft.sync_wal_writer().await;
         }
     }

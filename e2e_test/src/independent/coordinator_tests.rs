@@ -42,7 +42,7 @@ impl CnosdbMetaTestHelper {
             let oid = UuidGenerator::default().next_id();
             let tenant = Tenant::new(oid, name.clone(), TenantOptions::default());
             let create_tenant_req = WriteCommand::CreateTenant(DEFAULT_CLUSTER.to_string(), tenant);
-            println!("Creating tenant: {:?}", &create_tenant_req);
+            println!("Creating tenant: {:?}", create_tenant_req);
             let create_tenant_res = self
                 .runtime
                 .block_on(self.meta_client.write::<()>(&create_tenant_req));
@@ -62,7 +62,7 @@ impl CnosdbMetaTestHelper {
                     DatabaseConfig::default().into(),
                 ),
             );
-            println!("Creating database: {:?}", &create_database_req);
+            println!("Creating database: {:?}", create_database_req);
             let create_database_res = self.runtime.block_on(
                 self.meta_client
                     .write::<TenantMetaData>(&create_database_req),
@@ -117,7 +117,7 @@ impl CnosdbDataTestHelper {
                         }
                     }
                     if write_fail_count >= 3 {
-                        eprintln!("Failed to write '{}' after retried 3 times", &body);
+                        eprintln!("Failed to write '{}' after retried 3 times", body);
                         has_failed.store(true, atomic::Ordering::SeqCst);
                         break;
                     }
@@ -286,7 +286,7 @@ fn test_multi_tenants_write_data() {
                 panic!("Failed to do query: {e}");
             }
         };
-        println!("- Result text: {}", &result_csv);
+        println!("- Result text: {}", result_csv);
         let line_10 = result_csv.lines().nth(1);
         assert_eq!(line_10, Some("100"));
     }

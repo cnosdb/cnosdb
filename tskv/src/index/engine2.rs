@@ -47,7 +47,7 @@ impl IndexEngine2 {
         Ok(Self { env, db })
     }
 
-    pub fn reader_txn(&self) -> IndexResult<heed::RoTxn> {
+    pub fn reader_txn(&self) -> IndexResult<heed::RoTxn<'_>> {
         let reader = self
             .env
             .read_txn()
@@ -56,7 +56,7 @@ impl IndexEngine2 {
         Ok(reader)
     }
 
-    pub fn writer_txn(&self) -> IndexResult<heed::RwTxn> {
+    pub fn writer_txn(&self) -> IndexResult<heed::RwTxn<'_>> {
         let writer = self
             .env
             .write_txn()

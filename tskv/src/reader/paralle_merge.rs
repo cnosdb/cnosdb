@@ -84,9 +84,9 @@ impl Stream for SchemableParallelMergeStream {
     type Item = TskvResult<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        return match ready!(self.stream.poll_next_unpin(cx)) {
+        match ready!(self.stream.poll_next_unpin(cx)) {
             Some(Ok(batch)) => Poll::Ready(limit_record_batch(self.remain.as_mut(), batch).map(Ok)),
             other => Poll::Ready(other),
-        };
+        }
     }
 }

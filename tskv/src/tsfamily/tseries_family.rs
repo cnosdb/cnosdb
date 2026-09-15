@@ -141,7 +141,7 @@ impl TseriesFamily {
             for c in self.immut_cache.iter() {
                 let mut cache_not_flushed = true;
                 for fc in flushed_mem_caches {
-                    if c.data_ptr() as usize == fc.data_ptr() as usize {
+                    if std::ptr::eq(c.data_ptr(), fc.data_ptr()) {
                         cache_not_flushed = false;
                         break;
                     }

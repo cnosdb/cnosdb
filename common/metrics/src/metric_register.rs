@@ -70,8 +70,7 @@ impl MetricsRegister {
     pub fn sub_registers(&self) -> Vec<Arc<MetricsRegister>> {
         self.sub_register
             .lock()
-            .iter()
-            .map(|(_, v)| v.clone())
+            .values().cloned()
             .collect()
     }
 

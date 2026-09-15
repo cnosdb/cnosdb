@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use clap::{command, Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use config::tskv::Config;
 use memory_pool::GreedyMemoryPool;
 use metrics::metric_register::MetricsRegister;
@@ -278,7 +278,7 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
 fn get_deployment_mode(config_deployment_mode: &str) -> Result<DeploymentMode, std::io::Error> {
     match config_deployment_mode.parse::<DeploymentMode>() {
         Ok(mode) => Ok(mode),
-        Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+        Err(e) => Err(std::io::Error::other(e)),
     }
 }
 

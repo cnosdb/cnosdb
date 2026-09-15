@@ -406,10 +406,10 @@ impl DeleteSelectionExpressionToDomainsVisitorContext {
         (
             self.tag_domain_stack
                 .pop_back()
-                .unwrap_or(ColumnDomains::all()),
+                .unwrap_or_default(), // ColumnDomains::all() as default
             self.time_domain_stack
                 .pop_back()
-                .unwrap_or(ColumnDomains::all()),
+                .unwrap_or_default(), // ColumnDomains::all() as default
         )
     }
 }
@@ -808,7 +808,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err",
-            &and
+            and
         );
 
         let column_domain = result.as_ref().unwrap();
@@ -816,7 +816,7 @@ mod tests {
         assert!(
             except_column_domains.eq(column_domain),
             "convert expr {} to column domains err, excepted {:?}, found {:?}",
-            &and,
+            and,
             except_column_domains,
             column_domain,
         );
@@ -838,7 +838,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err",
-            &and
+            and
         );
 
         // println!("{:#?}", result.as_ref().unwrap());
@@ -848,7 +848,7 @@ mod tests {
         assert!(
             except_column_domains.eq(column_domain),
             "convert expr {} to column domains err, excepted {:?}, found {:?}",
-            &and,
+            and,
             except_column_domains,
             column_domain,
         );
@@ -879,7 +879,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err",
-            &and
+            and
         );
 
         // println!("{:#?}", result.as_ref().unwrap());
@@ -892,7 +892,7 @@ mod tests {
         assert!(
             except_column_domains.eq(&column_domain),
             "convert expr {} to column domains err, excepted {:?}, found {:?}",
-            &and,
+            and,
             except_column_domains,
             column_domain,
         );
@@ -929,7 +929,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err",
-            &and
+            and
         );
 
         // println!("{:#?}", result.as_ref().unwrap());
@@ -943,7 +943,7 @@ mod tests {
         assert!(
             except_column_domains.eq(&column_domain),
             "convert expr {} to column domains err, excepted {:?}, found {:?}",
-            &and,
+            and,
             except_column_domains,
             column_domain,
         );
@@ -986,7 +986,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err",
-            &and
+            and
         );
 
         // println!("{:#?}", result.as_ref().unwrap());
@@ -1001,7 +1001,7 @@ mod tests {
         assert!(
             except_column_domains.eq(&column_domain),
             "convert expr {} to column domains err, excepted {:?}, found {:?}",
-            &and,
+            and,
             except_column_domains,
             column_domain,
         );
@@ -1050,7 +1050,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err",
-            &and
+            and
         );
 
         // println!("{:#?}", result.as_ref().unwrap());
@@ -1066,7 +1066,7 @@ mod tests {
         assert!(
             except_column_domains.eq(&column_domain),
             "convert expr {} to column domains err, excepted {:?}, found {:?}",
-            &and,
+            and,
             except_column_domains,
             column_domain,
         );
@@ -1136,7 +1136,7 @@ mod tests {
 
         let result = get_domains(&or);
 
-        assert!(result.is_ok(), "convert expr {} to column domains err", &or);
+        assert!(result.is_ok(), "convert expr {} to column domains err", or);
 
         // println!("{:#?}", result.as_ref().unwrap());
 
@@ -1165,7 +1165,7 @@ mod tests {
         assert!(
             except_column_domains.eq(&column_domain),
             "convert expr {} to column domains err, excepted {:?}, found {:?}",
-            &or,
+            or,
             except_column_domains,
             column_domain,
         );
@@ -1196,7 +1196,7 @@ mod tests {
 
         let result = get_domains(&or);
 
-        assert!(result.is_ok(), "convert expr {} to column domains err", &or);
+        assert!(result.is_ok(), "convert expr {} to column domains err", or);
 
         // println!("{:#?}", result.as_ref().unwrap());
 
@@ -1226,7 +1226,7 @@ mod tests {
         assert!(
             except_column_domains.eq(&column_domain),
             "convert expr {} to column domains err, excepted {:?}, found {:?}",
-            &or,
+            or,
             except_column_domains,
             column_domain,
         );
@@ -1265,7 +1265,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err",
-            &and
+            and
         );
 
         // println!("{:#?}", result.as_ref().unwrap());
@@ -1294,7 +1294,7 @@ mod tests {
         assert!(
             except_column_domains.eq(&column_domain),
             "convert expr {} to column domains err, excepted {:?}, found {:?}",
-            &and,
+            and,
             except_column_domains,
             column_domain,
         );
@@ -1339,7 +1339,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err",
-            &and
+            and
         );
 
         // println!("{:#?}", result.as_ref().unwrap());
@@ -1379,7 +1379,7 @@ mod tests {
         assert!(
             except_column_domains.eq(&column_domain),
             "convert expr {} to column domains err, excepted {:?}, found {:?}",
-            &and,
+            and,
             except_column_domains,
             column_domain,
         );
@@ -1425,7 +1425,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err",
-            &and
+            and
         );
 
         // println!("{:#?}", result.as_ref().unwrap());
@@ -1455,8 +1455,8 @@ mod tests {
             &ScalarValue::Int64(Some(1672448462000000_i64)),
         );
 
-        println!("{:#?}", &time_1);
-        println!("{:#?}", &time_2);
+        println!("{:#?}", time_1);
+        println!("{:#?}", time_2);
 
         let region_domain = Domain::of_ranges(&[region]).unwrap();
         let host_domain = Domain::of_ranges(&[host_1, host_2]).unwrap();
@@ -1473,7 +1473,7 @@ mod tests {
         assert!(
             except_column_domains.eq(&column_domain),
             "convert expr {} to column domains err, excepted {:?}, found {:?}",
-            &and,
+            and,
             except_column_domains,
             column_domain,
         );
@@ -1501,7 +1501,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err",
-            &and
+            and
         );
 
         // println!("{:#?}", result.as_ref().unwrap());
@@ -1517,7 +1517,7 @@ mod tests {
         assert!(
             except_column_domains.eq(column_domain),
             "convert expr {} to column domains err, excepted {:?}, found {:?}",
-            &and,
+            and,
             except_column_domains,
             column_domain,
         );
@@ -1541,7 +1541,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err: {}",
-            &or,
+            or,
             result.unwrap_err()
         );
 
@@ -1552,7 +1552,7 @@ mod tests {
         assert!(
             column_domain.is_all(),
             "convert expr {} to column domains err, excepted ColumnDomains::All",
-            &or
+            or
         );
     }
 
@@ -1572,7 +1572,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err",
-            &in_list
+            in_list
         );
 
         // println!("{:#?}", result.as_ref().unwrap());
@@ -1582,7 +1582,7 @@ mod tests {
         assert!(
             column_domain.is_all(),
             "convert expr {} to column domains err, excepted ColumnDomains::All",
-            &in_list
+            in_list
         );
     }
 
@@ -1602,7 +1602,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err",
-            &not
+            not
         );
 
         // println!("{:#?}", result.as_ref().unwrap());
@@ -1612,7 +1612,7 @@ mod tests {
         assert!(
             column_domain.is_all(),
             "convert expr {} to column domains err, excepted ColumnDomains::All",
-            &not
+            not
         );
     }
 
@@ -1630,7 +1630,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err: {}",
-            &is_null,
+            is_null,
             result.unwrap_err()
         );
 
@@ -1641,7 +1641,7 @@ mod tests {
         assert!(
             column_domain.is_all(),
             "convert expr {} to column domains err, excepted ColumnDomains::All",
-            &is_null
+            is_null
         );
     }
 
@@ -1659,7 +1659,7 @@ mod tests {
         assert!(
             result.is_ok(),
             "convert expr {} to column domains err: {}",
-            &with_func,
+            with_func,
             result.unwrap_err()
         );
 
@@ -1670,7 +1670,7 @@ mod tests {
         assert!(
             column_domain.is_all(),
             "convert expr {} to column domains err, excepted ColumnDomains::All",
-            &with_func
+            with_func
         );
     }
 

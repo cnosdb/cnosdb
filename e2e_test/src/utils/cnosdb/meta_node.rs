@@ -72,7 +72,7 @@ impl CnosdbMetaTestHelper {
             panic!("At least 1 meta configs are needed to run singleton");
         }
         let node_def = self.meta_node_definitions[0].clone();
-        println!("- Running cnosdb-meta '{}'", &node_def.id);
+        println!("- Running cnosdb-meta '{}'", node_def.id);
         let proc = self.execute(&node_def);
         self.sub_processes.insert(node_def.id, proc);
 
@@ -81,7 +81,7 @@ impl CnosdbMetaTestHelper {
             .unwrap();
 
         println!("- Init cnosdb-meta ...");
-        let master_host = format!("http://{}", &self.meta_node_definitions[0].host_port);
+        let master_host = format!("http://{}", self.meta_node_definitions[0].host_port);
         self.client
             .post_json(format!("{master_host}/init").as_str(), "{}")
             .unwrap();
@@ -101,7 +101,7 @@ impl CnosdbMetaTestHelper {
             panic!("At least 2 meta configs are needed to run cluster");
         }
 
-        let master_host = format!("http://{}", &self.meta_node_definitions[0].host_port);
+        let master_host = format!("http://{}", self.meta_node_definitions[0].host_port);
 
         let mut wait_startup_threads = Vec::with_capacity(self.meta_node_definitions.len());
         for meta_node_def in self.meta_node_definitions.iter() {

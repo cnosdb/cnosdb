@@ -149,7 +149,7 @@ impl Accumulator for DataQualityAccumulator {
 
         let mut series_guard = self.series_guard();
 
-        for (time_list, value_list) in time_lists.into_iter().zip(value_lists.into_iter()) {
+        for (time_list, value_list) in time_lists.into_iter().zip(value_lists) {
             match (time_list, value_list) {
                 (ScalarValue::List(Some(times), _), ScalarValue::List(Some(values), _)) => {
                     let mut series = times

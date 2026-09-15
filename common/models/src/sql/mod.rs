@@ -288,7 +288,7 @@ impl ToDDLSql for TskvTableSchema {
         if if_not_exists {
             res.push_str("if not exists ");
         }
-        res.push_str(format!("\"{}\".\"{}\" ", &self.db, &self.name).as_str());
+        res.push_str(format!("\"{}\".\"{}\" ", self.db, self.name).as_str());
         res.push('(');
         self.columns()
             .iter()
@@ -613,7 +613,7 @@ remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
         );
         let db = DatabaseSchema::new("test", "test", db_option, Arc::new(db_config));
         assert_eq!(
-            format!("{}", db.to_ddl_sql(true).unwrap()),
+            db.to_ddl_sql(true).unwrap().to_string(),
             r#"create database if not exists "test" with precision 'US' max_memcache_size '512 GiB' memcache_partitions 12 wal_max_file_size '1 KiB' wal_sync 'false' strict_write 'true' max_cache_readers 32 ttl '1day' shard 3 replica 1 vnode_duration '2days 2h';"#
         );
     }

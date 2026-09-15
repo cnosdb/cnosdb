@@ -385,11 +385,9 @@ impl<'a> ExtParser<'a> {
         } else if self.parse_cnos_keyword(CnosKeyWord::QUERIES) {
             self.parse_show_queries()
         } else if self.parse_cnos_keyword(CnosKeyWord::STREAMS) {
-            let verbose = self
+            let verbose = if self
                 .parser
-                .parse_keyword(Keyword::VERBOSE)
-                .then_some(true)
-                .unwrap_or_default();
+                .parse_keyword(Keyword::VERBOSE) { true } else { Default::default() };
             Ok(ExtStatement::ShowStreams(ast::ShowStreams { verbose }))
         } else if self.parse_cnos_keyword(CnosKeyWord::REPLICAS) {
             self.parse_show_replicas()
@@ -2089,7 +2087,7 @@ impl<'a> ExtParser<'a> {
             Ok(())
         } else {
             self.parser.expected(
-                format!("{:?}", &key_word).as_str(),
+                format!("{:?}", key_word).as_str(),
                 self.parser.peek_token(),
             )
         }
@@ -2159,7 +2157,7 @@ impl<'a> ExtParser<'a> {
     fn parse_codec_type(&mut self) -> Result<Encoding> {
         self.parser.expect_token(&Token::LParen)?;
         if self.parser.peek_token().eq(&Token::RParen) {
-            return parser_err!(format!("expect codec encoding type in ()"));
+            return parser_err!("expect codec encoding type in ()".to_string());
         }
         let encoding = match self.parse_codec_encoding() {
             Ok(encoding) => encoding,

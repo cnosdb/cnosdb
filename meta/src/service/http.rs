@@ -189,9 +189,7 @@ impl HttpServer {
                 let data = storage
                     .write()
                     .await
-                    .backup()
-                    .map_err(MetaError::from)
-                    .map_err(|e| {
+                    .backup().map_err(|e| {
                         error!("dump error: {:?}", e);
                         warp::reject::custom(e)
                     })?;

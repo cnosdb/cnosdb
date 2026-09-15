@@ -170,7 +170,7 @@ impl<'de> Deserialize<'de> for TskvTableSchema {
                             columns_index = Some(map.next_value::<HashMap<String, usize>>()?);
                         }
                         _ => {
-                            return Err(serde::de::Error::unknown_field(
+                            Err(serde::de::Error::unknown_field(
                                 key,
                                 &[
                                     "tenant",
@@ -456,9 +456,7 @@ impl TskvTableSchema {
         // There is one and only one time column
         unsafe {
             self.columns
-                .iter()
-                .filter(|column| column.column_type.is_time())
-                .last()
+                .iter().rfind(|column| column.column_type.is_time())
                 .cloned()
                 .unwrap_unchecked()
         }

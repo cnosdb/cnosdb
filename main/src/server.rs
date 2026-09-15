@@ -332,9 +332,9 @@ impl ServiceBuilder {
         coord: CoordinatorRef,
         mode: ServerMode,
     ) -> Option<HttpService> {
-        let default_http_addr = match self.config.service.http_listen_port {
-            Some(port) => build_default_address(port),
-            None => return None,
+        let default_http_addr = {
+            let port = self.config.service.http_listen_port?;
+            build_default_address(port)
         };
 
         let addr = default_http_addr
@@ -365,9 +365,9 @@ impl ServiceBuilder {
     }
 
     fn create_grpc_if_enabled(&self, kv: EngineRef, coord: CoordinatorRef) -> Option<GrpcService> {
-        let default_grpc_addr = match self.config.service.grpc_listen_port {
-            Some(port) => build_default_address(port),
-            None => return None,
+        let default_grpc_addr = {
+            let port = self.config.service.grpc_listen_port?;
+            build_default_address(port)
         };
 
         let addr = default_grpc_addr
@@ -397,18 +397,18 @@ impl ServiceBuilder {
     }
 
     fn create_tcp_if_enabled(&self, coord: CoordinatorRef) -> Option<TcpService> {
-        let default_tcp_addr = match self.config.service.tcp_listen_port {
-            Some(port) => build_default_address(port),
-            None => return None,
+        let default_tcp_addr = {
+            let port = self.config.service.tcp_listen_port?;
+            build_default_address(port)
         };
 
         Some(TcpService::new(coord, default_tcp_addr))
     }
 
     fn create_flight_sql_if_enabled(&self, dbms: DBMSRef) -> Option<FlightSqlServiceAdapter> {
-        let default_flight_sql_addr = match self.config.service.flight_rpc_listen_port {
-            Some(port) => build_default_address(port),
-            None => return None,
+        let default_flight_sql_addr = {
+            let port = self.config.service.flight_rpc_listen_port?;
+            build_default_address(port)
         };
         let tls_config = self.config.security.tls_config.clone();
 

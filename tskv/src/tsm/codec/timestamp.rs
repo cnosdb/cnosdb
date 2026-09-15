@@ -145,7 +145,7 @@ fn encode_rle(v: u64, delta: u64, count: u64, dst: &mut Vec<u8>) {
 
     // check delta's divisor
     let mut div: u64 = 1_000_000_000_000;
-    while div > 1 && delta % div != 0 {
+    while div > 1 && !delta.is_multiple_of(div) {
         div /= 10;
     }
 

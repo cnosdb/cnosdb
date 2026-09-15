@@ -540,7 +540,7 @@ impl TenantMeta {
     pub fn list_tables(&self, db: &str) -> MetaResult<Vec<String>> {
         let mut list = vec![];
         if let Some(info) = self.data.read().dbs.get(db) {
-            for (k, _) in info.tables.iter() {
+            for k in info.tables.keys() {
                 list.push(k.clone());
             }
         }
@@ -687,7 +687,7 @@ impl TenantMeta {
 
     pub fn get_vnode_repl_set(&self, vnode_id: u32) -> Option<ReplicationSet> {
         let data = self.data.read();
-        for (_db_name, db_info) in data.dbs.iter() {
+        for db_info in data.dbs.values() {
             for bucket in db_info.buckets.iter() {
                 for repl_set in bucket.shard_group.iter() {
                     for vnode_info in repl_set.vnodes.iter() {
@@ -781,7 +781,7 @@ impl TenantMeta {
 
     pub fn change_local_vnode_status(&self, id: u32, status: VnodeStatus) -> MetaResult<()> {
         let mut data = self.data.write();
-        for (_db_name, db_info) in data.dbs.iter_mut() {
+        for db_info in data.dbs.values_mut() {
             for bucket in db_info.buckets.iter_mut() {
                 for repl_set in bucket.shard_group.iter_mut() {
                     for vnode in repl_set.vnodes.iter_mut() {
@@ -887,7 +887,7 @@ impl TenantMeta {
             let db_name = strs[5];
             if let Some(db) = cache.dbs.get_mut(db_name) {
                 if let Ok(bucket_id) = serde_json::from_str::<u32>(strs[7]) {
-                    db.buckets.sort_by(|a, b| a.id.cmp(&b.id));
+                    db.buckets.sort_by_key(|a| a.id);
                     if entry.tye == command::ENTRY_LOG_TYPE_SET {
                         if let Ok(info) = serde_json::from_str::<BucketInfo>(&entry.val) {
                             match db.buckets.binary_search_by(|v| v.id.cmp(&bucket_id)) {

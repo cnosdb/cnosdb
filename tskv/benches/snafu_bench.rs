@@ -72,7 +72,7 @@ fn bench_with_external(c: &mut Criterion) {
             idx += 1;
 
             let r = foo(*i).context(WithExternalSnafu {
-                external: format!("Failed to run foo: {}", &base_err_message),
+                external: format!("Failed to run foo: {}", base_err_message),
             });
             drop(r);
         });
@@ -85,7 +85,7 @@ fn bench_with_external(c: &mut Criterion) {
             idx += 1;
 
             let r = foo(*i).map_err(|e| Error::WithExternal {
-                external: format!("Failed to run foo: {}", &base_err_message),
+                external: format!("Failed to run foo: {}", base_err_message),
                 source: e,
             });
             drop(r);
