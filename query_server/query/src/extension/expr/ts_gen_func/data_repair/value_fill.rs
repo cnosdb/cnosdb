@@ -207,6 +207,7 @@ impl ValueFill {
         Ok(())
     }
 
+    #[allow(unused_assignments)]
     fn fill_ma(&mut self) {
         let window_size = 5;
         let mut window_sum = 0.0;

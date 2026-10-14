@@ -758,7 +758,7 @@ mod tests {
             input: Vec<f64>,
         }
 
-        let tests = vec![
+        let tests = [
             Test {
                 name: String::from("from reference paper"),
                 input: vec![12.0, 12.0, 24.0, 13.0, 24.0, 24.0, 24.0, 23.0],

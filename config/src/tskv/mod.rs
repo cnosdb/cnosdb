@@ -91,10 +91,10 @@ impl Config {
         if let Some(path) = path {
             let path = path.as_ref();
             if !path.exists() {
-                return Err(Box::new(figment::error::Kind::Message(format!(
-                    "Config file not found: {path:?}"
-                ))
-                .into()));
+                return Err(Box::new(
+                    figment::error::Kind::Message(format!("Config file not found: {path:?}"))
+                        .into(),
+                ));
             }
             figment = figment.merge(Toml::file(path));
         }

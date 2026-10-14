@@ -356,7 +356,7 @@ mod test {
 
     impl PartialOrd for Tuple {
         fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-            Some(self.a.cmp(&other.a))
+            Some(self.cmp(other))
         }
     }
 

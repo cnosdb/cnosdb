@@ -98,7 +98,11 @@ pub fn split_owner(owner: &str) -> (&str, &str) {
     owner
         .find('.')
         .map(|index| {
-            if index < owner.len() { (&owner[..index], &owner[(index + 1)..]) } else { (owner, "") }
+            if index < owner.len() {
+                (&owner[..index], &owner[(index + 1)..])
+            } else {
+                (owner, "")
+            }
         })
         .unwrap_or_default()
 }

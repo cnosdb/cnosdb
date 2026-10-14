@@ -227,6 +227,7 @@ impl<'de> Deserialize<'de> for TskvTableSchema {
     }
 }
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for TskvTableSchema {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.schema_version.cmp(&other.schema_version))
@@ -456,7 +457,8 @@ impl TskvTableSchema {
         // There is one and only one time column
         unsafe {
             self.columns
-                .iter().rfind(|column| column.column_type.is_time())
+                .iter()
+                .rfind(|column| column.column_type.is_time())
                 .cloned()
                 .unwrap_unchecked()
         }

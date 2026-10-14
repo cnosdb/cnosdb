@@ -1740,12 +1740,6 @@ mod test {
     }
 
     #[derive(Serialize, Deserialize, Debug, Clone)]
-    pub struct Command2 {
-        id: u32,
-        name: String,
-    }
-
-    #[derive(Serialize, Deserialize, Debug, Clone)]
     pub enum Command {
         // Test1 { id: u32, name: String },
         // Test2 { id: u32, name: String },

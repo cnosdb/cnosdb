@@ -159,7 +159,9 @@ impl CompactingFile {
     ) -> Self {
         let mut series_ids = {
             let chunks = tsm_reader.chunk_group();
-            chunks.values().flat_map(|chunk| {
+            chunks
+                .values()
+                .flat_map(|chunk| {
                     chunk
                         .chunks()
                         .iter()

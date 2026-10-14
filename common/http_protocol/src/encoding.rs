@@ -100,9 +100,7 @@ impl Encoding {
                 let buf = &mut *buf.borrow_mut();
                 buf.clear();
                 let mut encoder = lz4_flex::frame::FrameEncoder::new(buf);
-                encoder
-                    .write_all(&bytes)
-                    .map_err(io::Error::other)?;
+                encoder.write_all(&bytes).map_err(io::Error::other)?;
                 encoder.finish().map(|res| res.clone())
             })?,
             Encoding::Identity => bytes,

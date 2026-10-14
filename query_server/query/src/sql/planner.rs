@@ -186,15 +186,15 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         }
         match statement {
             ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt, session).await,
-            ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt, session),
-            ExtStatement::CreateTable(stmt) => self.create_table_to_plan(stmt, session),
+            ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(*stmt, session),
+            ExtStatement::CreateTable(stmt) => self.create_table_to_plan(*stmt, session),
             ExtStatement::CreateDatabase(stmt) => self.database_to_plan(stmt, session),
-            ExtStatement::CreateTenant(stmt) => self.create_tenant_to_plan(stmt),
-            ExtStatement::CreateUser(stmt) => self.create_user_to_plan(stmt),
-            ExtStatement::CreateRole(stmt) => self.create_role_to_plan(stmt, session),
-            ExtStatement::DropDatabaseObject(s) => self.drop_database_object_to_plan(s, session),
-            ExtStatement::DropTenantObject(s) => self.drop_tenant_object_to_plan(s, session),
-            ExtStatement::DropGlobalObject(s) => self.drop_global_object_to_plan(s),
+            ExtStatement::CreateTenant(stmt) => self.create_tenant_to_plan(*stmt),
+            ExtStatement::CreateUser(stmt) => self.create_user_to_plan(*stmt),
+            ExtStatement::CreateRole(stmt) => self.create_role_to_plan(*stmt, session),
+            ExtStatement::DropDatabaseObject(s) => self.drop_database_object_to_plan(*s, session),
+            ExtStatement::DropTenantObject(s) => self.drop_tenant_object_to_plan(*s, session),
+            ExtStatement::DropGlobalObject(s) => self.drop_global_object_to_plan(*s),
             ExtStatement::DescribeTable(stmt) => self.describe_table_to_plan(stmt, session),
             ExtStatement::DescribeDatabase(stmt) => self.describe_databases_to_plan(stmt, session),
             ExtStatement::ShowDatabases() => self.show_databases_to_plan(session),
@@ -212,14 +212,14 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 .await
             }
             ExtStatement::ShowTagValues(stmt) => self.show_tag_values(*stmt, session),
-            ExtStatement::AlterTable(stmt) => self.alter_table_to_plan(stmt, session),
-            ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt).await,
+            ExtStatement::AlterTable(stmt) => self.alter_table_to_plan(*stmt, session),
+            ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(*stmt).await,
             ExtStatement::AlterUser(stmt) => {
                 self.alter_user_to_plan(stmt, session.user(), false).await
             }
-            ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(stmt, session),
+            ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(*stmt, session),
             ExtStatement::ShowQueries => self.show_queries_to_plan(session),
-            ExtStatement::Copy(stmt) => self.copy_to_plan(stmt, session).await,
+            ExtStatement::Copy(stmt) => self.copy_to_plan(*stmt, session).await,
             ExtStatement::DropVnode(stmt) => self.drop_vnode_to_plan(stmt),
             ExtStatement::CopyVnode(stmt) => self.copy_vnode_to_plan(stmt),
             ExtStatement::MoveVnode(stmt) => self.move_vnode_to_plan(stmt),
@@ -236,7 +236,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 err: "ShowStreams Planner.".to_string(),
             }),
             ExtStatement::CreateStreamTable(stmt) => {
-                self.create_stream_table_to_plan(stmt, session)
+                self.create_stream_table_to_plan(*stmt, session)
             }
             ExtStatement::RecoverTenant(stmt) => self.recovertenant_to_plan(stmt),
             ExtStatement::RecoverDatabase(stmt) => self.recoverdatabase_to_plan(stmt, session),
@@ -1958,11 +1958,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
 
     async fn alter_user_to_plan(
         &self,
-        stmt: ast::AlterUser,
+        stmt: Box<ast::AlterUser>,
         user: &User,
         must_change: bool,
     ) -> QueryResult<PlanWithPrivileges> {
-        let ast::AlterUser { name, operation } = stmt;
+        let ast::AlterUser { name, operation } = *stmt;
 
         let sql_user_name = normalize_ident(name);
         // 查询用户信息，不存在直接报错咯
@@ -2369,7 +2369,12 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 // .   TableWriter
                 //         ListingTable
                 let (external_location_table, target_table, insert_columns) = self
-                    .build_source_and_target_table(session, stmt, file_format_options, copy_options)
+                    .build_source_and_target_table(
+                        session,
+                        *stmt,
+                        file_format_options,
+                        copy_options,
+                    )
                     .await?;
 
                 let plan = build_copy_into_table_plan(
@@ -2393,7 +2398,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 // .   TableWriterPlanNode
                 //         Plan.....
                 let plan = self
-                    .copy_into_location(session, stmt, file_format_options)
+                    .copy_into_location(session, *stmt, file_format_options)
                     .await?;
 
                 let database_set = self.schema_provider.reset_access_databases();
@@ -3159,7 +3164,7 @@ mod tests {
             &self,
             name: TableReference,
         ) -> datafusion::common::Result<Arc<TableSourceAdapter>> {
-            let schema = match name.table() {
+            let schema: Result<Schema, DataFusionError> = match name.table() {
                 "test_tb" => Ok(Schema::new(vec![
                     Field::new("field_int", DataType::Int32, false),
                     Field::new("field_string", DataType::Utf8, false),
@@ -3168,9 +3173,9 @@ mod tests {
                     unimplemented!("use test_tb for test")
                 }
             };
-            let table = match schema {
-                Ok(tb) => Arc::new(TestTable::new(Arc::new(tb))),
-                Err(e) => return Err(e),
+            let table = {
+                let tb = schema?;
+                Arc::new(TestTable::new(Arc::new(tb)))
             };
 
             Ok(Arc::new(TableSourceAdapter::try_new(
