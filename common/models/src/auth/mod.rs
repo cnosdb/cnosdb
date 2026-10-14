@@ -1,5 +1,4 @@
 use bcrypt::BcryptError;
-use openssl::error::ErrorStack;
 pub use password::{bcrypt_hash, bcrypt_verify};
 use snafu::{Backtrace, Location, Snafu};
 
@@ -19,8 +18,8 @@ pub enum AuthError {
     #[snafu(display("Generate id, error: {}", error))]
     IdGenerate { error: String },
 
-    #[snafu(display("Rsa error: {}", source))]
-    Rsa { source: ErrorStack },
+    #[snafu(display("Rsa error: {}", error))]
+    Rsa { error: String },
 
     #[snafu(display("Password not set"))]
     PasswordNotSet,

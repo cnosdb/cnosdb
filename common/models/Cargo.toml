@@ -30,11 +30,12 @@ futures = { workspace = true }
 humantime = { workspace = true }
 libc = { workspace = true }
 minivec = { workspace = true }
-openssl = { workspace = true }
 parking_lot = { workspace = true }
 pin-project = { workspace = true }
+pkcs8 = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
+rsa = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 snafu = { workspace = true }
