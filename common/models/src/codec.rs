@@ -14,11 +14,12 @@ pub const BIGINT_CODEC: [Encoding; 5] = [
 pub const TIMESTAMP_CODEC: [Encoding; 5] = BIGINT_CODEC;
 pub const UNSIGNED_BIGINT_CODEC: [Encoding; 5] = BIGINT_CODEC;
 
-pub const DOUBLE_CODEC: [Encoding; 4] = [
+pub const DOUBLE_CODEC: [Encoding; 5] = [
     Encoding::Default,
     Encoding::Null,
     Encoding::Gorilla,
     Encoding::Quantile,
+    Encoding::Alp,
 ];
 
 pub const STRING_CODEC: [Encoding; 7] = [
@@ -50,6 +51,7 @@ pub enum Encoding {
     Zlib = 9,
     BitPack = 10,
     DeltaTs = 11,
+    Alp = 12,
     Unknown = 15,
 }
 
@@ -92,6 +94,7 @@ impl Encoding {
             Encoding::Zstd => "ZSTD",
             Encoding::Zlib => "ZLIB",
             Encoding::BitPack => "BITPACK",
+            Encoding::Alp => "ALP",
             Encoding::Unknown => "UNKNOWN",
         }
     }
@@ -113,6 +116,7 @@ impl FromStr for Encoding {
             "ZSTD" => Ok(Self::Zstd),
             "ZLIB" => Ok(Self::Zlib),
             "BITPACK" => Ok(Self::BitPack),
+            "ALP" | "FASTALP" => Ok(Self::Alp),
             _ => Err(s.to_string()),
         }
     }
@@ -133,7 +137,24 @@ impl From<u8> for Encoding {
             9 => Encoding::Zlib,
             10 => Encoding::BitPack,
             11 => Encoding::DeltaTs,
+            12 => Encoding::Alp,
             _ => Encoding::Unknown,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_alp_encoding() {
+        assert!(Encoding::Alp.is_double_encoding());
+        assert_eq!(Encoding::Alp.as_str(), "ALP");
+        assert_eq!(Encoding::from_str("ALP"), Ok(Encoding::Alp));
+        assert_eq!(Encoding::from_str("alp"), Ok(Encoding::Alp));
+        assert_eq!(Encoding::from_str("FASTALP"), Ok(Encoding::Alp));
+        assert_eq!(Encoding::from_str("fastalp"), Ok(Encoding::Alp));
+        assert_eq!(Encoding::from(12), Encoding::Alp);
     }
 }

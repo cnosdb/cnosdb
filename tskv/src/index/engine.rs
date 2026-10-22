@@ -2,9 +2,8 @@ use std::fs;
 use std::ops::{BitAnd, BitOr, RangeBounds};
 use std::path::Path;
 
-use radixdb;
-use radixdb::store;
 use radixdb::store::BlobStore;
+use radixdb::{self, store};
 use snafu::ResultExt;
 
 use super::{IndexResult, IndexStorageSnafu, RoaringBitmapSnafu};

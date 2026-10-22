@@ -253,6 +253,16 @@ pub fn f64_pco_encode(src: &[f64], dst: &mut Vec<u8>) -> Result<(), CodecError> 
     Ok(())
 }
 
+pub fn f64_alp_encode(src: &[f64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
+    if src.is_empty() {
+        return Ok(());
+    }
+
+    dst.push(Encoding::Alp as u8);
+    fastalp::compress_into(src, dst);
+    Ok(())
+}
+
 pub fn f64_without_compress_encode(src: &[f64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
@@ -367,6 +377,32 @@ pub fn f64_pco_decode(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, Code
 
     let src = &src[1..];
     let decode: Vec<f64> = simple_decompress(src)?;
+    let mut builder = Float64Builder::with_capacity(bit_set.len());
+    let mut iter = decode.into_iter();
+
+    for is_valid in bit_set.iter() {
+        if is_valid {
+            match iter.next() {
+                Some(value) => builder.append_value(value),
+                None => return Err("Mismatch between bit set and decoded values".into()),
+            }
+        } else {
+            builder.append_null();
+        }
+    }
+    let array = builder.finish();
+    Ok(Arc::new(array))
+}
+
+pub fn f64_alp_decode(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
+    if src.is_empty() || src.len() == 1 {
+        let null_value: Vec<Option<f64>> = vec![None; bit_set.len()];
+        let array = Float64Array::from(null_value);
+        return Ok(Arc::new(array));
+    }
+
+    let src = &src[1..];
+    let decode: Vec<f64> = fastalp::decompress(src).map_err(|e| format!("{e:?}"))?;
     let mut builder = Float64Builder::with_capacity(bit_set.len());
     let mut iter = decode.into_iter();
 
@@ -615,7 +651,8 @@ mod tests {
     use arrow_array::{Array, Float64Array};
 
     use crate::tsm::codec::float::{
-        f64_gorilla_decode, f64_gorilla_encode, f64_pco_decode, f64_pco_encode,
+        f64_alp_decode, f64_alp_encode, f64_gorilla_decode, f64_gorilla_encode, f64_pco_decode,
+        f64_pco_encode,
     };
 
     #[test]
@@ -687,6 +724,36 @@ mod tests {
         f64_pco_encode(&src, &mut dst).expect("failed to encode src");
         let null_bitset = NullBuffer::new_valid(src.len());
         let array_ref = f64_pco_decode(&dst, &null_bitset).expect("failed to decode");
+        let array = array_ref.as_any().downcast_ref::<Float64Array>().unwrap();
+
+        let expected = Float64Array::from_iter(src.iter().cloned());
+
+        assert_eq!(*array, expected);
+    }
+
+    #[test]
+    fn encode_special_value_alp() {
+        let src: Vec<f64> = vec![
+            100.0,
+            222.12,
+            f64::from_bits(0x7ff8000000000001), /* Go representation of
+                                                 * signalling NaN */
+            45.324,
+            f64::NAN,
+            2453.023,
+            -1234.235312132,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            9123419329123.1234,
+            f64::from_bits(0x7ff0000000000002), // Prometheus stale NaN
+            -19292929929292929292.22,
+            -0.0000000000000000000000000092,
+        ];
+        let mut dst = vec![];
+
+        f64_alp_encode(&src, &mut dst).expect("failed to encode src");
+        let null_bitset = NullBuffer::new_valid(src.len());
+        let array_ref = f64_alp_decode(&dst, &null_bitset).expect("failed to decode");
         let array = array_ref.as_any().downcast_ref::<Float64Array>().unwrap();
 
         let expected = Float64Array::from_iter(src.iter().cloned());
@@ -1819,6 +1886,21 @@ mod tests {
 
             let null_bitset = NullBuffer::new_valid(src.len());
             let array_ref = f64_pco_decode(&dst, &null_bitset).expect("failed to decode");
+            let array = array_ref.as_any().downcast_ref::<Float64Array>().unwrap();
+            // verify got same values back
+            let expected = Float64Array::from_iter(src.iter().cloned());
+
+            assert_eq!(*array, expected, "{}", test.name);
+        }
+
+        for test in tests.iter() {
+            let mut dst = vec![];
+            let src = test.input.clone();
+
+            f64_alp_encode(&src, &mut dst).expect("failed to encode");
+
+            let null_bitset = NullBuffer::new_valid(src.len());
+            let array_ref = f64_alp_decode(&dst, &null_bitset).expect("failed to decode");
             let array = array_ref.as_any().downcast_ref::<Float64Array>().unwrap();
             // verify got same values back
             let expected = Float64Array::from_iter(src.iter().cloned());

@@ -9,8 +9,8 @@ use crate::tsm::codec::boolean::{
     bool_without_compress_encode,
 };
 use crate::tsm::codec::float::{
-    f64_gorilla_decode, f64_gorilla_encode, f64_pco_decode, f64_pco_encode,
-    f64_without_compress_decode, f64_without_compress_encode,
+    f64_alp_decode, f64_alp_encode, f64_gorilla_decode, f64_gorilla_encode, f64_pco_decode,
+    f64_pco_encode, f64_without_compress_decode, f64_without_compress_encode,
 };
 use crate::tsm::codec::integer::{
     i64_pco_decode_to_array, i64_pco_encode, i64_without_compress_decode_to_array,
@@ -178,6 +178,18 @@ impl FloatCodec for QuantileFloatCodec {
 
     fn decode_to_array(&self, src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
         f64_pco_decode(src, bit_set)
+    }
+}
+
+struct AlpFloatCodec();
+
+impl FloatCodec for AlpFloatCodec {
+    fn encode(&self, src: &[f64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
+        f64_alp_encode(src, dst)
+    }
+
+    fn decode_to_array(&self, src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
+        f64_alp_decode(src, bit_set)
     }
 }
 
@@ -396,6 +408,7 @@ pub fn get_f64_codec(algo: Encoding) -> Box<dyn FloatCodec + Send + Sync> {
         Encoding::Null => Box::new(NullFloatCodec()),
         Encoding::Gorilla => Box::new(GorillaFloatCodec()),
         Encoding::Quantile => Box::new(QuantileFloatCodec()),
+        Encoding::Alp => Box::new(AlpFloatCodec()),
         _ => Box::new(GorillaFloatCodec()),
     }
 }
