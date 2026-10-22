@@ -240,8 +240,8 @@ impl IndexMemCache {
         if tags.is_empty() {
             let mut bitmap = roaring::RoaringBitmap::new();
             if let Some(item) = self.inverted.get(tab) {
-                for (_, tags_map) in item.iter() {
-                    for (_, vals_map) in tags_map.iter() {
+                for tags_map in item.values() {
+                    for vals_map in tags_map.values() {
                         bitmap = bitmap.bitor(vals_map);
                     }
                 }

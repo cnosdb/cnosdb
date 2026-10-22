@@ -305,7 +305,7 @@ impl Parser {
     }
 }
 
-fn escape(s: &[u8], need_unescape: bool) -> Result<Cow<str>> {
+fn escape(s: &[u8], need_unescape: bool) -> Result<Cow<'_, str>> {
     if !need_unescape {
         return Ok(Cow::Borrowed(u8_slice_to_str_unchecked(s)));
     }

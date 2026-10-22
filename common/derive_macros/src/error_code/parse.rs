@@ -229,7 +229,7 @@ fn parse_syn_attributes<T: Parse>(
         if attr.path().is_ident(ident) {
             match attr.parse_args_with(Punctuated::<T, token::Comma>::parse_terminated) {
                 Ok(attrs) => {
-                    outs.extend(attrs.into_iter());
+                    outs.extend(attrs);
                 }
                 Err(e) => errs.push(syn::Error::new(
                     Span::call_site(),

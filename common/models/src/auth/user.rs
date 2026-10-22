@@ -262,11 +262,7 @@ impl<'a> AuthType<'a> {
                             err: "client no private key".to_string(),
                         })?;
 
-                let success = rsa_utils::verify(
-                    private_key_pem.as_bytes(),
-                    password,
-                    public_key_pem.as_bytes(),
-                )?;
+                let success = rsa_utils::verify(private_key_pem, password, public_key_pem)?;
 
                 if !success {
                     return Err(AuthError::AccessDenied {

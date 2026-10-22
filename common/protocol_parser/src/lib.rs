@@ -182,7 +182,7 @@ fn is_tagset_character(c: char) -> bool {
     c.is_alphanumeric() || c == '\\'
 }
 
-fn next_tag_set(buf: &str) -> NextTagRes {
+fn next_tag_set(buf: &str) -> NextTagRes<'_> {
     let mut escaped = false;
     let mut exists_tag_set = false;
     let mut tok_offsets = [0_usize; 3];

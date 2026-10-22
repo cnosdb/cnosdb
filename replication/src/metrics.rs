@@ -182,7 +182,7 @@ impl ReplicationMetrics {
         let metric = register.metric::<U64Gauge>("raft_wal_index_max", "raft wal max index");
         metric.remove(lables);
 
-        for (id, _) in self.repication_delay.iter() {
+        for id in self.repication_delay.keys() {
             let metric = register
                 .metric::<U64Gauge>("raft_replication_delay", "raft replication behind leader");
             metric.remove([

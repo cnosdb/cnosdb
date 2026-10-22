@@ -537,7 +537,7 @@ mod tests {
 
     #[test]
     fn encode_invalid_utf8() {
-        let src = vec![&[b'\xC0'][..]];
+        let src = vec![&(*b"\xC0")[..]];
         let mut dst = vec![];
 
         str_snappy_encode(&src, &mut dst).expect("failed to encode src");
@@ -666,7 +666,7 @@ mod tests {
         let mut dst = vec![];
 
         str_snappy_decode(&src, &mut dst).expect("failed to decode src");
-        assert_eq!(dst, vec![&[b'\xC0'][..]]);
+        assert_eq!(dst, vec![&(*b"\xC0")[..]]);
     }
 
     static ALLSTR: [&str; 10] = [

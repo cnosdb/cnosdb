@@ -68,11 +68,7 @@ impl MetricsRegister {
 
     /// Get all owned sub-registers of this register.
     pub fn sub_registers(&self) -> Vec<Arc<MetricsRegister>> {
-        self.sub_register
-            .lock()
-            .iter()
-            .map(|(_, v)| v.clone())
-            .collect()
+        self.sub_register.lock().values().cloned().collect()
     }
 
     /// Register a metric with the default implementation of CreateMetricRecorder and return Metric<I>,

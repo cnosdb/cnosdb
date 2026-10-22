@@ -4,85 +4,84 @@ use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef,
 };
 use datafusion::arrow::record_batch::RecordBatch;
-use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
+// use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
 use tokio::sync::RwLock;
 
 use crate::error::{TskvError, TskvResult};
 use crate::tsfamily::tseries_family::TseriesFamily;
-use crate::VnodeId;
 
-pub type Hash = [u8; 32];
+// pub type Hash = [u8; 32];
 
-#[derive(Default, Debug)]
-pub struct VnodeHashTreeNode {
-    pub vnode_id: VnodeId,
-    pub fields: Vec<FieldHashTreeNode>,
-}
+// #[derive(Default, Debug)]
+// pub struct VnodeHashTreeNode {
+//     pub vnode_id: VnodeId,
+//     pub fields: Vec<FieldHashTreeNode>,
+// }
 
-impl std::fmt::Display for VnodeHashTreeNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{ \"vnode_id\": {}, \"fields\": [ ", self.vnode_id)?;
-        let last_field_i = self.fields.len() - 1;
-        for (i, node) in self.fields.iter().enumerate() {
-            write!(f, "{node}")?;
-            if i < last_field_i {
-                write!(f, ", ")?;
-            }
-        }
-        write!(f, "] }}")
-    }
-}
+// impl std::fmt::Display for VnodeHashTreeNode {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(f, "{{ \"vnode_id\": {}, \"fields\": [ ", self.vnode_id)?;
+//         let last_field_i = self.fields.len() - 1;
+//         for (i, node) in self.fields.iter().enumerate() {
+//             write!(f, "{node}")?;
+//             if i < last_field_i {
+//                 write!(f, ", ")?;
+//             }
+//         }
+//         write!(f, "] }}")
+//     }
+// }
 
-#[derive(Default, Debug)]
-pub struct FieldHashTreeNode {
-    pub field_id: FieldId,
-    pub time_ranges: Vec<TimeRangeHashTreeNode>,
-}
+// #[derive(Default, Debug)]
+// pub struct FieldHashTreeNode {
+//     pub field_id: FieldId,
+//     pub time_ranges: Vec<TimeRangeHashTreeNode>,
+// }
 
-impl FieldHashTreeNode {
-    pub fn column_series(&self) -> (ColumnId, SeriesId) {
-        model_utils::split_id(self.field_id)
-    }
-}
+// impl FieldHashTreeNode {
+//     pub fn column_series(&self) -> (ColumnId, SeriesId) {
+//         model_utils::split_id(self.field_id)
+//     }
+// }
 
-impl std::fmt::Display for FieldHashTreeNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (cid, sid) = self.column_series();
-        write!(
-            f,
-            "{{ \"series_id\": {sid}, \"column_id\": {cid}, \"values\": [ "
-        )?;
-        let last_tr_i = self.time_ranges.len() - 1;
-        for (i, node) in self.time_ranges.iter().enumerate() {
-            write!(f, "{node}")?;
-            if i < last_tr_i {
-                write!(f, ", ")?;
-            }
-        }
-        write!(f, "] }}")
-    }
-}
+// impl std::fmt::Display for FieldHashTreeNode {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         let (cid, sid) = self.column_series();
+//         write!(
+//             f,
+//             "{{ \"series_id\": {sid}, \"column_id\": {cid}, \"values\": [ "
+//         )?;
+//         let last_tr_i = self.time_ranges.len() - 1;
+//         for (i, node) in self.time_ranges.iter().enumerate() {
+//             write!(f, "{node}")?;
+//             if i < last_tr_i {
+//                 write!(f, ", ")?;
+//             }
+//         }
+//         write!(f, "] }}")
+//     }
+// }
 
-#[derive(Default, Debug)]
-pub struct TimeRangeHashTreeNode {
-    pub min_ts: Timestamp,
-    pub max_ts: Timestamp,
-    pub hash: Hash,
-}
+// #[derive(Default, Debug)]
+// pub struct TimeRangeHashTreeNode {
+//     pub min_ts: Timestamp,
+//     pub max_ts: Timestamp,
+//     pub hash: Hash,
+// }
 
-impl std::fmt::Display for TimeRangeHashTreeNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{ \"time_range\": [{}, {}], \"hash\": \"",
-            self.min_ts, self.max_ts
-        )?;
-        for v in self.hash {
-            f.write_fmt(format_args!("{:x}", v))?;
-        }
-        write!(f, "\" }}")
-    }
-}
+// impl std::fmt::Display for TimeRangeHashTreeNode {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(
+//             f,
+//             "{{ \"time_range\": [{}, {}], \"hash\": \"",
+//             self.min_ts, self.max_ts
+//         )?;
+//         for v in self.hash {
+//             f.write_fmt(format_args!("{:x}", v))?;
+//         }
+//         write!(f, "\" }}")
+//     }
+// }
 
 pub fn vnode_table_checksum_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![

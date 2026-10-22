@@ -170,7 +170,7 @@ impl<'de> Deserialize<'de> for TskvTableSchema {
                             columns_index = Some(map.next_value::<HashMap<String, usize>>()?);
                         }
                         _ => {
-                            return Err(serde::de::Error::unknown_field(
+                            Err(serde::de::Error::unknown_field(
                                 key,
                                 &[
                                     "tenant",
@@ -227,6 +227,7 @@ impl<'de> Deserialize<'de> for TskvTableSchema {
     }
 }
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for TskvTableSchema {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.schema_version.cmp(&other.schema_version))
@@ -457,8 +458,7 @@ impl TskvTableSchema {
         unsafe {
             self.columns
                 .iter()
-                .filter(|column| column.column_type.is_time())
-                .last()
+                .rfind(|column| column.column_type.is_time())
                 .cloned()
                 .unwrap_unchecked()
         }

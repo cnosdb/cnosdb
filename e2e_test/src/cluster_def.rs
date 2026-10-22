@@ -197,7 +197,7 @@ pub struct DataNodeDefinition {
 
 impl DataNodeDefinition {
     pub fn new(id: u8, meta_ids: &[u8]) -> Self {
-        if id == 0 || meta_ids.iter().any(|id| *id == 0) {
+        if id == 0 || meta_ids.contains(&0) {
             panic!("id must be greater than 0");
         }
         let data_http_port = data_id_to_http_port(id);

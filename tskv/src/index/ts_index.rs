@@ -927,7 +927,7 @@ mod test {
                     key: "station".as_bytes().to_vec(),
                     value: Some("a2".as_bytes().to_vec()),
                 }],
-                &[matched_series.clone()],
+                std::slice::from_ref(&matched_series),
                 true,
             )
             .await

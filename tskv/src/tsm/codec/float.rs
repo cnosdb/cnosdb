@@ -501,13 +501,11 @@ fn decode_with_sentinel(
     // TODO(edd): I found it got complicated quickly when trying to use Ref to
     // mutate br_cached_val, br_valid_bits and I directly in the closure, so for
     // now we will just mutate copies and re-assign...
-    match refill_cache(i) {
-        Ok(res) => {
-            br_cached_val = res.0;
-            br_valid_bits = res.1;
-            i += res.2;
-        }
-        Err(e) => return Err(e),
+    {
+        let res = refill_cache(i)?;
+        br_cached_val = res.0;
+        br_valid_bits = res.1;
+        i += res.2;
     }
 
     let mut trailing_n = 0u8;
@@ -515,13 +513,11 @@ fn decode_with_sentinel(
 
     loop {
         if br_valid_bits == 0 {
-            match refill_cache(i) {
-                Ok(res) => {
-                    br_cached_val = res.0;
-                    br_valid_bits = res.1;
-                    i += res.2;
-                }
-                Err(e) => return Err(e),
+            {
+                let res = refill_cache(i)?;
+                br_cached_val = res.0;
+                br_valid_bits = res.1;
+                i += res.2;
             }
         }
 
@@ -534,13 +530,11 @@ fn decode_with_sentinel(
         }
 
         if br_valid_bits == 0 {
-            match refill_cache(i) {
-                Ok(res) => {
-                    br_cached_val = res.0;
-                    br_valid_bits = res.1;
-                    i += res.2;
-                }
-                Err(e) => return Err(e),
+            {
+                let res = refill_cache(i)?;
+                br_cached_val = res.0;
+                br_valid_bits = res.1;
+                i += res.2;
             }
         }
 
@@ -563,13 +557,11 @@ fn decode_with_sentinel(
                     lm_bits = br_cached_val.rotate_left(11);
                 }
 
-                match refill_cache(i) {
-                    Ok(res) => {
-                        br_cached_val = res.0;
-                        br_valid_bits = res.1;
-                        i += res.2;
-                    }
-                    Err(e) => return Err(e),
+                {
+                    let res = refill_cache(i)?;
+                    br_cached_val = res.0;
+                    br_valid_bits = res.1;
+                    i += res.2;
                 }
 
                 br_cached_val = br_cached_val.rotate_left(bits_01 as u32);
@@ -602,13 +594,11 @@ fn decode_with_sentinel(
                 s_bits = br_cached_val.rotate_left(meaningful_n as u32);
             }
 
-            match refill_cache(i) {
-                Ok(res) => {
-                    br_cached_val = res.0;
-                    br_valid_bits = res.1;
-                    i += res.2;
-                }
-                Err(e) => return Err(e),
+            {
+                let res = refill_cache(i)?;
+                br_cached_val = res.0;
+                br_valid_bits = res.1;
+                i += res.2;
             }
 
             br_cached_val = br_cached_val.rotate_left(m_bits as u32);
@@ -768,7 +758,7 @@ mod tests {
             input: Vec<f64>,
         }
 
-        let tests = vec![
+        let tests = [
             Test {
                 name: String::from("from reference paper"),
                 input: vec![12.0, 12.0, 24.0, 13.0, 24.0, 24.0, 24.0, 23.0],

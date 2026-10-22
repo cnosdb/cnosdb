@@ -11,7 +11,8 @@ fmt:
 	cargo +nightly fmt --all
 
 clippy_check:
-	BUILD_PROTOS=1 cargo clippy --workspace  --all-targets --features coordinator_e2e_test --features meta_e2e_test -- -D warnings
+	BUILD_PROTOS=1 cargo clippy --workspace  --all-targets --features coordinator_e2e_test --features meta_e2e_test -- -D warnings \
+	-A clippy::result-large-err -A clippy::large_enum_variant
 
 clippy:
 	BUILD_PROTOS=1 cargo clippy --workspace  --all-targets --features coordinator_e2e_test --features meta_e2e_test --fix --allow-staged

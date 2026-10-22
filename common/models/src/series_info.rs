@@ -131,7 +131,7 @@ impl SeriesKey {
 
 impl std::fmt::Display for SeriesKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", &self.table)?;
+        write!(f, "{}", self.table)?;
         for tag in self.tags.iter() {
             write!(
                 f,

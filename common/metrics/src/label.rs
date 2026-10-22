@@ -17,7 +17,7 @@ impl Labels {
         self.0.insert(k, v);
     }
 
-    pub fn iter(&self) -> Iter<&'static str, Cow<'_, str>> {
+    pub fn iter(&self) -> Iter<'_, &'static str, Cow<'_, str>> {
         self.0.iter()
     }
 }

@@ -5,11 +5,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::Timestamp;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(u8)]
 pub enum Precision {
     MS = 0,
     US,
+    #[default]
     NS,
 }
 
@@ -21,12 +22,6 @@ impl From<u8> for Precision {
             2 => Precision::NS,
             _ => Precision::NS,
         }
-    }
-}
-
-impl Default for Precision {
-    fn default() -> Self {
-        Self::NS
     }
 }
 

@@ -24,12 +24,6 @@ mod tests {
     use tskv::{file_utils, kv_option, Engine, TsKv};
     use utils::precision::Precision;
 
-    /// Initializes a TsKv instance in specified directory, with an optional runtime,
-    /// returns the TsKv and runtime.
-    ///
-    /// If the given runtime is none, get_tskv will create a new runtime and
-    /// put into the return value, or else the given runtime will be returned.
-
     fn get_config(dir: impl AsRef<Path>) -> Config {
         let dir = dir.as_ref();
         let mut global_config = Config::for_test();
@@ -39,6 +33,11 @@ mod tests {
         global_config
     }
 
+    /// Initializes a TsKv instance in specified directory, with an optional runtime,
+    /// returns the TsKv and runtime.
+    ///
+    /// If the given runtime is none, get_tskv will create a new runtime and
+    /// put into the return value, or else the given runtime will be returned.
     fn get_tskv(dir: impl AsRef<Path>, runtime: Option<Arc<Runtime>>) -> (Arc<Runtime>, TsKv) {
         let global_config = get_config(dir);
         let opt = kv_option::Options::from(&global_config);

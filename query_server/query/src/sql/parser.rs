@@ -385,11 +385,11 @@ impl<'a> ExtParser<'a> {
         } else if self.parse_cnos_keyword(CnosKeyWord::QUERIES) {
             self.parse_show_queries()
         } else if self.parse_cnos_keyword(CnosKeyWord::STREAMS) {
-            let verbose = self
-                .parser
-                .parse_keyword(Keyword::VERBOSE)
-                .then_some(true)
-                .unwrap_or_default();
+            let verbose = if self.parser.parse_keyword(Keyword::VERBOSE) {
+                true
+            } else {
+                Default::default()
+            };
             Ok(ExtStatement::ShowStreams(ast::ShowStreams { verbose }))
         } else if self.parse_cnos_keyword(CnosKeyWord::REPLICAS) {
             self.parse_show_replicas()
@@ -606,7 +606,7 @@ impl<'a> ExtParser<'a> {
             self.parse_alter_table_drop_column(table_name)
         } else if self.parser.parse_keyword(Keyword::RENAME) {
             let alter_tbl = self.parse_alter_table_rename(table_name)?;
-            Ok(ExtStatement::AlterTable(alter_tbl))
+            Ok(ExtStatement::AlterTable(Box::new(alter_tbl)))
         } else {
             self.expected("ADD or ALTER or DROP or RENAME", self.parser.peek_token())
         }
@@ -615,17 +615,17 @@ impl<'a> ExtParser<'a> {
     fn parse_alter_table_add_column(&mut self, table_name: ObjectName) -> Result<ExtStatement> {
         if self.parse_cnos_keyword(CnosKeyWord::FIELD) {
             let column = self.parse_cnos_field()?;
-            Ok(ExtStatement::AlterTable(AlterTable {
+            Ok(ExtStatement::AlterTable(Box::new(AlterTable {
                 table_name,
                 alter_action: AlterTableAction::AddColumn { column },
-            }))
+            })))
         } else if self.parse_cnos_keyword(CnosKeyWord::TAG) {
             let tag_name = self.parser.parse_identifier()?;
             let column = ColumnOption::new_tag(tag_name);
-            Ok(ExtStatement::AlterTable(AlterTable {
+            Ok(ExtStatement::AlterTable(Box::new(AlterTable {
                 table_name,
                 alter_action: AlterTableAction::AddColumn { column },
-            }))
+            })))
         } else {
             self.expected("FIELD or TAG", self.parser.peek_token())
         }
@@ -633,10 +633,10 @@ impl<'a> ExtParser<'a> {
 
     fn parse_alter_table_drop_column(&mut self, table_name: ObjectName) -> Result<ExtStatement> {
         let column_name = self.parser.parse_identifier()?;
-        Ok(ExtStatement::AlterTable(AlterTable {
+        Ok(ExtStatement::AlterTable(Box::new(AlterTable {
             table_name,
             alter_action: AlterTableAction::DropColumn { column_name },
-        }))
+        })))
     }
 
     fn parse_alter_table_rename(&mut self, table_name: ObjectName) -> Result<AlterTable> {
@@ -663,13 +663,13 @@ impl<'a> ExtParser<'a> {
 
         self.expect_cnos_keyword(CnosKeyWord::CODEC)?;
         let encoding = self.parse_codec_type()?;
-        Ok(ExtStatement::AlterTable(AlterTable {
+        Ok(ExtStatement::AlterTable(Box::new(AlterTable {
             table_name,
             alter_action: AlterTableAction::AlterColumnEncoding {
                 column_name,
                 encoding,
             },
-        }))
+        })))
     }
 
     fn parse_alter_database(&mut self) -> Result<ExtStatement> {
@@ -725,7 +725,10 @@ impl<'a> ExtParser<'a> {
             self.expected("ADD, REMOVE, SET, UNSET", self.parser.peek_token())?
         };
 
-        Ok(ExtStatement::AlterTenant(AlterTenant { name, operation }))
+        Ok(ExtStatement::AlterTenant(Box::new(AlterTenant {
+            name,
+            operation,
+        })))
     }
 
     fn alter_parse_limiter(&mut self) -> Result<SqlOption, ParserError> {
@@ -868,7 +871,10 @@ impl<'a> ExtParser<'a> {
             self.expected("RENAME,SET", self.parser.peek_token())?
         };
 
-        Ok(ExtStatement::AlterUser(AlterUser { name, operation }))
+        Ok(ExtStatement::AlterUser(Box::new(AlterUser {
+            name,
+            operation,
+        })))
     }
 
     /// Parses the set of
@@ -1037,7 +1043,7 @@ impl<'a> ExtParser<'a> {
             unbounded,
             options: builder.options.unwrap_or(HashMap::new()),
         };
-        Ok(ExtStatement::CreateExternalTable(create))
+        Ok(ExtStatement::CreateExternalTable(Box::new(create)))
     }
 
     fn parse_create_table(&mut self) -> Result<ExtStatement> {
@@ -1052,7 +1058,7 @@ impl<'a> ExtParser<'a> {
             if_not_exists,
             columns,
         };
-        Ok(ExtStatement::CreateTable(create))
+        Ok(ExtStatement::CreateTable(Box::new(create)))
     }
 
     fn parse_database_options_and_config(&mut self) -> Result<(DatabaseOptions, DatabaseConfig)> {
@@ -1241,11 +1247,11 @@ impl<'a> ExtParser<'a> {
 
         let role_name = self.parser.parse_identifier()?;
 
-        Ok(ExtStatement::GrantRevoke(GrantRevoke {
+        Ok(ExtStatement::GrantRevoke(Box::new(GrantRevoke {
             is_grant: true,
             privileges,
             role_name,
-        }))
+        })))
     }
 
     fn parse_revoke(&mut self) -> Result<ExtStatement> {
@@ -1259,11 +1265,11 @@ impl<'a> ExtParser<'a> {
 
         let role_name = self.parser.parse_identifier()?;
 
-        Ok(ExtStatement::GrantRevoke(GrantRevoke {
+        Ok(ExtStatement::GrantRevoke(Box::new(GrantRevoke {
             is_grant: false,
             privileges,
             role_name,
-        }))
+        })))
     }
 
     fn parse_create_user(&mut self) -> Result<ExtStatement> {
@@ -1282,11 +1288,11 @@ impl<'a> ExtParser<'a> {
             vec![]
         };
 
-        Ok(ExtStatement::CreateUser(CreateUser {
+        Ok(ExtStatement::CreateUser(Box::new(CreateUser {
             if_not_exists,
             name,
             with_options,
-        }))
+        })))
     }
 
     fn parse_create_role(&mut self) -> Result<ExtStatement> {
@@ -1304,11 +1310,11 @@ impl<'a> ExtParser<'a> {
             None
         };
 
-        Ok(ExtStatement::CreateRole(CreateRole {
+        Ok(ExtStatement::CreateRole(Box::new(CreateRole {
             if_not_exists,
             name,
             inherit,
-        }))
+        })))
     }
     // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     fn parse_create_tenant(&mut self) -> Result<ExtStatement> {
@@ -1326,11 +1332,11 @@ impl<'a> ExtParser<'a> {
             vec![]
         };
 
-        Ok(ExtStatement::CreateTenant(CreateTenant {
+        Ok(ExtStatement::CreateTenant(Box::new(CreateTenant {
             if_not_exists,
             name,
             with_options,
-        }))
+        })))
     }
 
     fn parse_tenant_with_options(&mut self) -> Result<Vec<SqlOption>, ParserError> {
@@ -1591,9 +1597,9 @@ impl<'a> ExtParser<'a> {
     ///   'table' = 'test_stream',
     /// ) engine = tskv;
     fn parse_create_stream_table(&mut self) -> Result<ExtStatement> {
-        Ok(ExtStatement::CreateStreamTable(
+        Ok(ExtStatement::CreateStreamTable(Box::new(
             self.parser.parse_create_table(false, false, None, false)?,
-        ))
+        )))
     }
 
     /// 废弃
@@ -1646,14 +1652,14 @@ impl<'a> ExtParser<'a> {
         self.parser.expect_keyword(Keyword::INSERT)?;
         let statement = Box::new(self.parser.parse_insert()?);
 
-        Ok(ExtStatement::CreateStream(CreateStream {
+        Ok(ExtStatement::CreateStream(Box::new(CreateStream {
             if_not_exists,
             name,
             trigger,
             watermark,
             output_mode,
             statement,
-        }))
+        })))
     }
 
     /// Parse a SQL CREATE statement
@@ -1734,7 +1740,7 @@ impl<'a> ExtParser<'a> {
             };
         }
 
-        Ok(CopyTarget::IntoTable(CopyIntoTable {
+        Ok(CopyTarget::IntoTable(Box::new(CopyIntoTable {
             location: UriLocation {
                 path,
                 connection_options,
@@ -1743,7 +1749,7 @@ impl<'a> ExtParser<'a> {
             },
             table_name,
             columns,
-        }))
+        })))
     }
 
     fn parse_copy_into_location(&mut self, path: String) -> Result<CopyTarget> {
@@ -1775,13 +1781,13 @@ impl<'a> ExtParser<'a> {
             Default::default()
         };
 
-        Ok(CopyTarget::IntoLocation(CopyIntoLocation {
+        Ok(CopyTarget::IntoLocation(Box::new(CopyIntoLocation {
             from,
             location: UriLocation {
                 path,
                 connection_options,
             },
-        }))
+        })))
     }
 
     /// Parse a copy into statement
@@ -1822,11 +1828,11 @@ impl<'a> ExtParser<'a> {
             }
         }
 
-        Ok(ExtStatement::Copy(ast::Copy {
+        Ok(ExtStatement::Copy(Box::new(ast::Copy {
             copy_target,
             file_format_options,
             copy_options,
-        }))
+        })))
     }
 
     fn _parse_files_of_copy_into(&mut self) -> Result<Vec<String>> {
@@ -1883,11 +1889,11 @@ impl<'a> ExtParser<'a> {
         let ast = if self.parser.parse_keyword(Keyword::TABLE) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let object_name = self.parser.parse_object_name()?;
-            ExtStatement::DropDatabaseObject(DropDatabaseObject {
+            ExtStatement::DropDatabaseObject(Box::new(DropDatabaseObject {
                 object_name,
                 if_exist,
                 obj_type: DatabaseObjectType::Table,
-            })
+            }))
         } else if self.parser.parse_keyword(Keyword::DATABASE) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let object_name = self.parser.parse_identifier()?;
@@ -1895,12 +1901,12 @@ impl<'a> ExtParser<'a> {
             if self.parse_cnos_keyword(CnosKeyWord::AFTER) {
                 after = Some(self.parse_string_value()?);
             }
-            ExtStatement::DropTenantObject(DropTenantObject {
+            ExtStatement::DropTenantObject(Box::new(DropTenantObject {
                 object_name,
                 if_exist,
                 obj_type: TenantObjectType::Database,
                 after,
-            })
+            }))
         } else if self.parse_cnos_keyword(CnosKeyWord::TENANT) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let object_name = self.parser.parse_identifier()?;
@@ -1908,30 +1914,30 @@ impl<'a> ExtParser<'a> {
             if self.parse_cnos_keyword(CnosKeyWord::AFTER) {
                 after = Some(self.parse_string_value()?);
             }
-            ExtStatement::DropGlobalObject(DropGlobalObject {
+            ExtStatement::DropGlobalObject(Box::new(DropGlobalObject {
                 object_name,
                 if_exist,
                 obj_type: GlobalObjectType::Tenant,
                 after,
-            })
+            }))
         } else if self.parser.parse_keyword(Keyword::USER) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let object_name = self.parser.parse_identifier()?;
-            ExtStatement::DropGlobalObject(DropGlobalObject {
+            ExtStatement::DropGlobalObject(Box::new(DropGlobalObject {
                 object_name,
                 if_exist,
                 obj_type: GlobalObjectType::User,
                 after: None,
-            })
+            }))
         } else if self.parser.parse_keyword(Keyword::ROLE) {
             let if_exist = self.parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
             let object_name = self.parser.parse_identifier()?;
-            ExtStatement::DropTenantObject(DropTenantObject {
+            ExtStatement::DropTenantObject(Box::new(DropTenantObject {
                 object_name,
                 if_exist,
                 obj_type: TenantObjectType::Role,
                 after: None,
-            })
+            }))
         } else if self.parse_cnos_keyword(CnosKeyWord::VNODE) {
             let vnode_id = self.parse_number::<VnodeId>()?;
             ExtStatement::DropVnode(DropVnode { vnode_id })
@@ -2088,10 +2094,8 @@ impl<'a> ExtParser<'a> {
         if self.parse_cnos_keyword(key_word) {
             Ok(())
         } else {
-            self.parser.expected(
-                format!("{:?}", &key_word).as_str(),
-                self.parser.peek_token(),
-            )
+            self.parser
+                .expected(format!("{:?}", key_word).as_str(), self.parser.peek_token())
         }
     }
 
@@ -2159,7 +2163,7 @@ impl<'a> ExtParser<'a> {
     fn parse_codec_type(&mut self) -> Result<Encoding> {
         self.parser.expect_token(&Token::LParen)?;
         if self.parser.peek_token().eq(&Token::RParen) {
-            return parser_err!(format!("expect codec encoding type in ()"));
+            return parser_err!("expect codec encoding type in ()".to_string());
         }
         let encoding = match self.parse_codec_encoding() {
             Ok(encoding) => encoding,
@@ -2245,15 +2249,10 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match &statements[0] {
-            ExtStatement::DropTenantObject(DropTenantObject {
-                object_name,
-                if_exist,
-                obj_type,
-                after: None,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_db".to_string());
-                assert_eq!(if_exist.to_string(), "true".to_string());
-                assert_eq!(obj_type, &TenantObjectType::Database);
+            ExtStatement::DropTenantObject(stmt) => {
+                assert_eq!(stmt.object_name.to_string(), "test_db".to_string());
+                assert_eq!(stmt.if_exist.to_string(), "true".to_string());
+                assert_eq!(stmt.obj_type, TenantObjectType::Database);
             }
             _ => panic!("failed"),
         }
@@ -2262,15 +2261,10 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match &statements[0] {
-            ExtStatement::DropTenantObject(DropTenantObject {
-                object_name,
-                if_exist,
-                obj_type,
-                after: None,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_db".to_string());
-                assert_eq!(if_exist.to_string(), "false".to_string());
-                assert_eq!(obj_type, &TenantObjectType::Database);
+            ExtStatement::DropTenantObject(stmt) => {
+                assert_eq!(stmt.object_name.to_string(), "test_db".to_string());
+                assert_eq!(stmt.if_exist.to_string(), "false".to_string());
+                assert_eq!(stmt.obj_type, TenantObjectType::Database);
             }
             _ => panic!("failed"),
         }
@@ -2279,16 +2273,11 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match &statements[0] {
-            ExtStatement::DropTenantObject(DropTenantObject {
-                object_name,
-                if_exist,
-                obj_type,
-                after,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_db".to_string());
-                assert_eq!(if_exist.to_string(), "false".to_string());
-                assert_eq!(obj_type, &TenantObjectType::Database);
-                assert_eq!(*after, Some("1h".to_string()));
+            ExtStatement::DropTenantObject(stmt) => {
+                assert_eq!(stmt.object_name.to_string(), "test_db".to_string());
+                assert_eq!(stmt.if_exist.to_string(), "false".to_string());
+                assert_eq!(stmt.obj_type, TenantObjectType::Database);
+                assert_eq!(stmt.after, Some("1h".to_string()));
             }
             _ => panic!("failed"),
         }
@@ -2297,16 +2286,11 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match &statements[0] {
-            ExtStatement::DropTenantObject(DropTenantObject {
-                object_name,
-                if_exist,
-                obj_type,
-                after,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_db".to_string());
-                assert_eq!(if_exist.to_string(), "true".to_string());
-                assert_eq!(obj_type, &TenantObjectType::Database);
-                assert_eq!(*after, Some("1h".to_string()));
+            ExtStatement::DropTenantObject(stmt) => {
+                assert_eq!(stmt.object_name.to_string(), "test_db".to_string());
+                assert_eq!(stmt.if_exist.to_string(), "true".to_string());
+                assert_eq!(stmt.obj_type, TenantObjectType::Database);
+                assert_eq!(stmt.after, Some("1h".to_string()));
             }
             _ => panic!("failed"),
         }
@@ -2315,15 +2299,10 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match &statements[0] {
-            ExtStatement::DropGlobalObject(DropGlobalObject {
-                object_name,
-                if_exist,
-                obj_type,
-                after: None,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_tt".to_string());
-                assert_eq!(if_exist.to_string(), "true".to_string());
-                assert_eq!(obj_type, &GlobalObjectType::Tenant);
+            ExtStatement::DropGlobalObject(stmt) => {
+                assert_eq!(stmt.object_name.to_string(), "test_tt".to_string());
+                assert_eq!(stmt.if_exist.to_string(), "true".to_string());
+                assert_eq!(stmt.obj_type, GlobalObjectType::Tenant);
             }
             _ => panic!("failed"),
         }
@@ -2332,15 +2311,10 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match &statements[0] {
-            ExtStatement::DropGlobalObject(DropGlobalObject {
-                object_name,
-                if_exist,
-                obj_type,
-                after: None,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_tt".to_string());
-                assert_eq!(if_exist.to_string(), "false".to_string());
-                assert_eq!(obj_type, &GlobalObjectType::Tenant);
+            ExtStatement::DropGlobalObject(stmt) => {
+                assert_eq!(stmt.object_name.to_string(), "test_tt".to_string());
+                assert_eq!(stmt.if_exist.to_string(), "false".to_string());
+                assert_eq!(stmt.obj_type, GlobalObjectType::Tenant);
             }
             _ => panic!("failed"),
         }
@@ -2349,16 +2323,11 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match &statements[0] {
-            ExtStatement::DropGlobalObject(DropGlobalObject {
-                object_name,
-                if_exist,
-                obj_type,
-                after,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_tt".to_string());
-                assert_eq!(if_exist.to_string(), "false".to_string());
-                assert_eq!(obj_type, &GlobalObjectType::Tenant);
-                assert_eq!(*after, Some("1h".to_string()));
+            ExtStatement::DropGlobalObject(stmt) => {
+                assert_eq!(stmt.object_name.to_string(), "test_tt".to_string());
+                assert_eq!(stmt.if_exist.to_string(), "false".to_string());
+                assert_eq!(stmt.obj_type, GlobalObjectType::Tenant);
+                assert_eq!(stmt.after, Some("1h".to_string()));
             }
             _ => panic!("failed"),
         }
@@ -2367,16 +2336,11 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match &statements[0] {
-            ExtStatement::DropGlobalObject(DropGlobalObject {
-                object_name,
-                if_exist,
-                obj_type,
-                after,
-            }) => {
-                assert_eq!(object_name.to_string(), "test_tt".to_string());
-                assert_eq!(if_exist.to_string(), "true".to_string());
-                assert_eq!(obj_type, &GlobalObjectType::Tenant);
-                assert_eq!(*after, Some("1h".to_string()));
+            ExtStatement::DropGlobalObject(stmt) => {
+                assert_eq!(stmt.object_name.to_string(), "test_tt".to_string());
+                assert_eq!(stmt.if_exist.to_string(), "true".to_string());
+                assert_eq!(stmt.obj_type, GlobalObjectType::Tenant);
+                assert_eq!(stmt.after, Some("1h".to_string()));
             }
             _ => panic!("failed"),
         }
@@ -2447,7 +2411,7 @@ mod tests {
         let statement1 = ExtParser::parse_sql(sql).unwrap().pop_front().unwrap();
         assert_eq!(
             statement1,
-            ExtStatement::CreateTable(CreateTable {
+            ExtStatement::CreateTable(Box::new(CreateTable {
                 name: ObjectName(vec!["test".into()]),
                 if_not_exists: false,
                 columns: vec![ColumnOption {
@@ -2456,7 +2420,7 @@ mod tests {
                     data_type: DataType::BigInt(None),
                     encoding: None
                 }]
-            })
+            }))
         );
 
         let sql = "CREATE TABLE test(column1 BIGINT,);";
@@ -2475,16 +2439,12 @@ mod tests {
         let statements = ExtParser::parse_sql(sql).unwrap();
         assert_eq!(statements.len(), 1);
         match &statements[0] {
-            ExtStatement::CreateTable(CreateTable {
-                name,
-                if_not_exists,
-                columns,
-            }) => {
-                assert_eq!(name.to_string(), "test".to_string());
-                assert_eq!(if_not_exists.to_string(), "true".to_string());
-                assert_eq!(columns.len(), 7);
+            ExtStatement::CreateTable(stmt) => {
+                assert_eq!(stmt.name.to_string(), "test".to_string());
+                assert_eq!(stmt.if_not_exists.to_string(), "true".to_string());
+                assert_eq!(stmt.columns.len(), 7);
                 assert_eq!(
-                    *columns,
+                    stmt.columns,
                     vec![
                         ColumnOption {
                             name: Ident::from("column6"),
@@ -2548,7 +2508,6 @@ mod tests {
                 Statement::Insert {
                     table_name: ref sql_object_name,
                     columns: ref sql_column_names,
-                    source: _,
                     ..
                 } => {
                     let expect_table_name = &ObjectName(vec![
@@ -2750,7 +2709,7 @@ mod tests {
         let statement: Vec<AlterTable> = statement
             .into_iter()
             .map(|s| match s {
-                ExtStatement::AlterTable(s) => s,
+                ExtStatement::AlterTable(s) => *s,
                 _ => panic!("Expect AlterTable"),
             })
             .collect();
@@ -2820,23 +2779,23 @@ mod tests {
             .last()
             .unwrap();
 
-        let copy_target = ast::CopyTarget::IntoTable(CopyIntoTable {
+        let copy_target = ast::CopyTarget::IntoTable(Box::new(CopyIntoTable {
             location: UriLocation {
                 path: "s3://bucket/path".to_string(),
                 connection_options: vec![],
             },
             table_name: ObjectName(vec!["mytable".into()]),
             columns: vec![],
-        });
+        }));
 
-        let expected = ExtStatement::Copy(ast::Copy {
+        let expected = ExtStatement::Copy(Box::new(ast::Copy {
             copy_target,
             file_format_options: vec![SqlOption {
                 name: "type".into(),
                 value: Value::SingleQuotedString("csv".to_string()),
             }],
             copy_options: vec![],
-        });
+        }));
 
         assert_eq!(expected, statement)
     }
@@ -2953,7 +2912,7 @@ mod tests {
             .last()
             .unwrap();
 
-        let copy_target = ast::CopyTarget::IntoLocation(CopyIntoLocation {
+        let copy_target = ast::CopyTarget::IntoLocation(Box::new(CopyIntoLocation {
             from: TableFactor::Table {
                 name: ObjectName(vec!["mytable".into()]),
                 alias: None,
@@ -2973,16 +2932,16 @@ mod tests {
                     },
                 ],
             },
-        });
+        }));
 
-        let expected = ExtStatement::Copy(ast::Copy {
+        let expected = ExtStatement::Copy(Box::new(ast::Copy {
             copy_target,
             file_format_options: vec![SqlOption {
                 name: "type".into(),
                 value: Value::SingleQuotedString("csv".to_string()),
             }],
             copy_options: vec![],
-        });
+        }));
 
         assert_eq!(expected, statement)
     }
@@ -3013,7 +2972,7 @@ mod tests {
                     watermark,
                     output_mode,
                     statement,
-                } = s;
+                } = *s;
 
                 assert!(if_not_exists);
                 assert_eq!(name, Ident::new("test_s"));
@@ -3071,7 +3030,7 @@ mod tests {
                     with_options,
                     engine,
                     ..
-                } = s
+                } = *s
                 {
                     let columns_expected = vec![
                         make_column_def("time", DataType::Timestamp(None, TimezoneInfo::None)),
@@ -3114,18 +3073,17 @@ mod tests {
         let statement = parse_sql("ALTER TABLE TskvTable RENAME COLUMN tag1 to tag2;");
 
         match statement {
-            ExtStatement::AlterTable(AlterTable {
-                table_name,
-                alter_action:
-                    AlterTableAction::RenameColumn {
-                        old_column_name,
-                        new_column_name,
-                    },
-            }) => {
-                assert_eq!("TskvTable", &table_name.to_string());
-                assert_eq!(Ident::from("tag1"), old_column_name);
-                assert_eq!(Ident::from("tag2"), new_column_name);
-            }
+            ExtStatement::AlterTable(stmt) => match stmt.alter_action {
+                AlterTableAction::RenameColumn {
+                    old_column_name,
+                    new_column_name,
+                } => {
+                    assert_eq!("TskvTable", stmt.table_name.to_string());
+                    assert_eq!(Ident::from("tag1"), old_column_name);
+                    assert_eq!(Ident::from("tag2"), new_column_name);
+                }
+                _ => panic!("expect RenameColumn"),
+            },
             _ => panic!("expect RenameColumn"),
         }
     }
@@ -3244,10 +3202,10 @@ mod tests {
                         },
                     ],
                 };
-                if stmt != &expected {
+                if stmt.as_ref() != &expected {
                     println!("Actual: {:?}", stmt);
                 }
-                assert_eq!(stmt, &expected);
+                assert_eq!(stmt.as_ref(), &expected);
             }
             _ => panic!("impossible"),
         }

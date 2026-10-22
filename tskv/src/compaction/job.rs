@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use snafu::ResultExt;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::oneshot::Receiver as OneshotReceiver;
-use tokio::sync::{oneshot, Mutex, RwLock, RwLockWriteGuard, Semaphore};
+use tokio::sync::{oneshot, Mutex, RwLock, Semaphore};
 use trace::{error, info};
 
 use crate::compaction::metrics::{CompactionType, VnodeCompactionMetrics};
@@ -254,17 +254,6 @@ impl CompactJobInner {
                 );
             }
         });
-    }
-}
-
-pub struct StartVnodeCompactionGuard<'a> {
-    inner: RwLockWriteGuard<'a, CompactJobInner>,
-}
-
-impl<'a> Drop for StartVnodeCompactionGuard<'a> {
-    fn drop(&mut self) {
-        info!("StopCompactionGuard(drop): start vnode compaction job");
-        self.inner.start_vnode_compaction_job();
     }
 }
 

@@ -82,7 +82,7 @@ fn interval_median(timestamps: &[i64]) -> i64 {
         interval.push(timestamps[i] - timestamps[i - 1]);
     }
     interval.sort();
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         (interval[n / 2 - 1] + interval[n / 2]) / 2
     } else {
         interval[n / 2]
@@ -93,7 +93,7 @@ fn f64_median(values: &[f64]) -> f64 {
     let mut values_clone = values.to_vec();
     values_clone.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let n: usize = values_clone.len();
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         (values_clone[n / 2 - 1] + values_clone[n / 2]) / 2.0
     } else {
         values_clone[n / 2]

@@ -18,25 +18,25 @@ pub enum ExtStatement {
     SqlStatement(Box<Statement>),
 
     // bulk load/unload
-    Copy(Copy),
+    Copy(Box<Copy>),
 
-    CreateExternalTable(CreateExternalTable),
-    CreateTable(CreateTable),
-    CreateStreamTable(Statement),
+    CreateExternalTable(Box<CreateExternalTable>),
+    CreateTable(Box<CreateTable>),
+    CreateStreamTable(Box<Statement>),
     CreateDatabase(Box<CreateDatabase>),
-    CreateTenant(CreateTenant),
-    CreateUser(CreateUser),
-    CreateRole(CreateRole),
+    CreateTenant(Box<CreateTenant>),
+    CreateUser(Box<CreateUser>),
+    CreateRole(Box<CreateRole>),
 
-    CreateStream(CreateStream),
+    CreateStream(Box<CreateStream>),
     DropStream(DropStream),
     ShowStreams(ShowStreams),
 
-    DropDatabaseObject(DropDatabaseObject),
-    DropTenantObject(DropTenantObject),
-    DropGlobalObject(DropGlobalObject),
+    DropDatabaseObject(Box<DropDatabaseObject>),
+    DropTenantObject(Box<DropTenantObject>),
+    DropGlobalObject(Box<DropGlobalObject>),
 
-    GrantRevoke(GrantRevoke),
+    GrantRevoke(Box<GrantRevoke>),
 
     DescribeTable(DescribeTable),
     DescribeDatabase(DescribeDatabase),
@@ -49,9 +49,9 @@ pub enum ExtStatement {
     // system cmd
     ShowQueries,
     AlterDatabase(Box<AlterDatabase>),
-    AlterTable(AlterTable),
-    AlterTenant(AlterTenant),
-    AlterUser(AlterUser),
+    AlterTable(Box<AlterTable>),
+    AlterTenant(Box<AlterTenant>),
+    AlterUser(Box<AlterUser>),
 
     // vnode cmd
     DropVnode(DropVnode),
@@ -137,8 +137,8 @@ pub struct Copy {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CopyTarget {
-    IntoTable(CopyIntoTable),
-    IntoLocation(CopyIntoLocation),
+    IntoTable(Box<CopyIntoTable>),
+    IntoLocation(Box<CopyIntoLocation>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

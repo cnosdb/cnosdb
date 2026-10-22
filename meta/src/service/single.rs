@@ -179,15 +179,10 @@ impl SingleServer {
     fn dump(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("dump").and(self.with_storage()).and_then(
             |storage: Arc<RwLock<StateMachine>>| async move {
-                let data = storage
-                    .write()
-                    .await
-                    .backup()
-                    .map_err(MetaError::from)
-                    .map_err(|e| {
-                        error!("dump error: {:?}", e);
-                        warp::reject::custom(e)
-                    })?;
+                let data = storage.write().await.backup().map_err(|e| {
+                    error!("dump error: {:?}", e);
+                    warp::reject::custom(e)
+                })?;
 
                 let mut rsp = "".to_string();
                 for (key, val) in data.map.iter() {

@@ -245,7 +245,7 @@ impl WalEntryCodec {
     }
 
     pub fn decode(&mut self, data: &[u8]) -> TskvResult<Option<MiniVec<u8>>> {
-        self.buffer.truncate(0);
+        self.buffer.clear();
         self.codec
             .decode(data, &mut self.buffer)
             .context(error::DecodeSnafu)?;

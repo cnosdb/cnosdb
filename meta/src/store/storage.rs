@@ -1187,7 +1187,7 @@ impl StateMachine {
     ) -> MetaResult<TenantMetaData> {
         let db_path = KeyPath::tenant_db_name(cluster, tenant, db);
         let buckets = self.children_data::<BucketInfo>(&(db_path.clone() + "/buckets"))?;
-        for (_, val) in buckets.iter() {
+        for val in buckets.values() {
             if *ts >= val.start_time && *ts < val.end_time {
                 return self.to_tenant_meta_data(cluster, tenant);
             }
@@ -1735,12 +1735,6 @@ mod test {
     //{"Set":{"key":"foo","value":"bar111"}}
     #[derive(Serialize, Deserialize, Debug, Clone)]
     pub struct Command1 {
-        id: u32,
-        name: String,
-    }
-
-    #[derive(Serialize, Deserialize, Debug, Clone)]
-    pub struct Command2 {
         id: u32,
         name: String,
     }

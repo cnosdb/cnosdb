@@ -1,12 +1,10 @@
 use std::any::Any;
 use std::fmt::{self, Display, Formatter};
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::Poll;
 
 use coordinator::service::CoordinatorRef;
 use coordinator::SendableCoordinatorRecordBatchStream;
-use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
@@ -195,24 +193,24 @@ impl<'a> Display for PredicateDisplay<'a> {
     }
 }
 
-struct TagRecordBatchStream {
-    schema: SchemaRef,
-    columns: Option<Vec<ArrayRef>>,
-}
+// struct TagRecordBatchStream {
+//     schema: SchemaRef,
+//     columns: Option<Vec<ArrayRef>>,
+// }
 
-impl Stream for TagRecordBatchStream {
-    type Item = Result<RecordBatch>;
+// impl Stream for TagRecordBatchStream {
+//     type Item = Result<RecordBatch>;
 
-    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.columns
-            .take()
-            .map(|e| {
-                let batch = RecordBatch::try_new(self.schema.clone(), e).map_err(Into::into);
-                Poll::Ready(Some(batch))
-            })
-            .unwrap_or_else(|| Poll::Ready(None))
-    }
-}
+//     fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+//         self.columns
+//             .take()
+//             .map(|e| {
+//                 let batch = RecordBatch::try_new(self.schema.clone(), e).map_err(Into::into);
+//                 Poll::Ready(Some(batch))
+//             })
+//             .unwrap_or_else(|| Poll::Ready(None))
+//     }
+// }
 
 #[allow(dead_code)]
 pub struct TagScanStream {

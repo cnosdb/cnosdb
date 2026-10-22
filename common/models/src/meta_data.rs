@@ -414,7 +414,7 @@ pub fn get_disk_info(path: &str) -> std::io::Result<u64> {
                 None, // lp_total_number_of_bytes
                 None, // lp_total_number_of_free_bytes
             )
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
             lp_free_bytes_available_to_caller.assume_init()
         };
         Ok(free_bytes_available_to_caller)

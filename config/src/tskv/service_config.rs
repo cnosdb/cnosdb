@@ -99,7 +99,7 @@ impl CheckConfig for ServiceConfig {
         let mut ret = CheckConfigResult::default();
 
         if let Some(port) = self.http_listen_port {
-            let default_http_addr = format!("{}:{}", &config.global.host, port);
+            let default_http_addr = format!("{}:{}", config.global.host, port);
             if let Err(e) = default_http_addr.to_socket_addrs() {
                 ret.add_error(CheckConfigItemResult {
                     config: config_name.clone(),
@@ -110,7 +110,7 @@ impl CheckConfig for ServiceConfig {
         }
 
         if let Some(port) = self.grpc_listen_port {
-            let default_grpc_addr = format!("{}:{}", &config.global.host, port);
+            let default_grpc_addr = format!("{}:{}", config.global.host, port);
             if let Err(e) = default_grpc_addr.to_socket_addrs() {
                 ret.add_error(CheckConfigItemResult {
                     config: config_name.clone(),
@@ -121,7 +121,7 @@ impl CheckConfig for ServiceConfig {
         }
 
         if let Some(port) = self.flight_rpc_listen_port {
-            let default_flight_rpc_addr = format!("{}:{}", &config.global.host, port);
+            let default_flight_rpc_addr = format!("{}:{}", config.global.host, port);
             if let Err(e) = default_flight_rpc_addr.to_socket_addrs() {
                 ret.add_error(CheckConfigItemResult {
                     config: config_name.clone(),
@@ -132,7 +132,7 @@ impl CheckConfig for ServiceConfig {
         }
 
         if let Some(port) = self.tcp_listen_port {
-            let default_tcp_addr = format!("{}:{}", &config.global.host, port);
+            let default_tcp_addr = format!("{}:{}", config.global.host, port);
             if let Err(e) = default_tcp_addr.to_socket_addrs() {
                 ret.add_error(CheckConfigItemResult {
                     config: config_name.clone(),

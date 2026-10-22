@@ -27,7 +27,7 @@ fn new() -> ScalarUDF {
         if input.len() >= 3 && !TIMESTAMPS.iter().any(|t| t.eq(&input[2])) {
             return Err(DataFusionError::External(Box::new(
                 AnalyzerSnafu {
-                    err: format!("Expect Timestamp type, but found {} type.", &input[2]),
+                    err: format!("Expect Timestamp type, but found {} type.", input[2]),
                 }
                 .build(),
             )));
@@ -36,7 +36,7 @@ fn new() -> ScalarUDF {
         if input.len() == 4 && !INTERVALS.iter().any(|t| t.eq(&input[3])) {
             return Err(DataFusionError::External(Box::new(
                 AnalyzerSnafu {
-                    err: format!("Expect Interval type, but found {} type.", &input[3]),
+                    err: format!("Expect Interval type, but found {} type.", input[3]),
                 }
                 .build(),
             )));

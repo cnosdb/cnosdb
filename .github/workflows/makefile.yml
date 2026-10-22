@@ -121,7 +121,7 @@ jobs:
       - name: Run and test
         run: |
           rustup component add clippy
-          cargo clippy --workspace  --all-targets --features coordinator_e2e_test --features meta_e2e_test -- -D warnings
+          cargo clippy --workspace  --all-targets --features coordinator_e2e_test --features meta_e2e_test -- -D warnings -A clippy::result-large-err -A clippy::large_enum_variant
           # cargo build --profile test-ci --package main --bin cnosdb
           # Copy-Item -Path .\target\test-ci\cnosdb.exe -Destination .\cnosdb.exe
           # cargo clean

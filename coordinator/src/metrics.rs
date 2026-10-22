@@ -25,7 +25,7 @@ impl LPLine {
         }
     }
 
-    pub fn to_line(&self) -> Line {
+    pub fn to_line(&self) -> Line<'_> {
         let tags = self
             .labels
             .0
@@ -222,7 +222,7 @@ mod test {
             ),
         ];
         assert_eq!(lines_buffer.len(), lines.len());
-        for (lp_line, line_exp) in lines_buffer.into_iter().zip(lines.into_iter()) {
+        for (lp_line, line_exp) in lines_buffer.into_iter().zip(lines) {
             assert_eq!(
                 LinePartialComparator(lp_line.to_line()),
                 LinePartialComparator(line_exp)

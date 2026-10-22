@@ -350,10 +350,9 @@ impl RaftEntryStorageInner {
     fn entries_from_cache(&self, start: u64, end: u64) -> Option<Vec<RaftEntry>> {
         let mut entries = vec![];
         for index in start..end {
-            if let Some(entry) = self.entry_cache.get(&index) {
+            {
+                let entry = self.entry_cache.get(&index)?;
                 entries.push(entry.clone());
-            } else {
-                return None;
             }
         }
 

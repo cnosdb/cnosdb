@@ -19,7 +19,7 @@ pub fn convert_batches(batches: Vec<RecordBatch>) -> Result<Vec<Vec<String>>, Ar
             if !equivalent_names_and_types(&schema, batch.schema()) {
                 return Err(ArrowError::SchemaError(format!(
                     "Schema mismatch. Previously had\n{:#?}\n\nGot:\n{:#?}",
-                    &schema,
+                    schema,
                     batch.schema()
                 )));
             }

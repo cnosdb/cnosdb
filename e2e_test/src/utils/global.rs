@@ -45,6 +45,7 @@ impl E2eContext {
         });
 
         let global_context = unsafe {
+            #[allow(static_mut_refs)]
             GLOBAL_CONTEXT
                 .clone()
                 .expect("initialized by INIT_TEST.call_once")
@@ -211,10 +212,10 @@ impl Ipv4PortPicker {
                 return Ok(SocketAddrV4::new(host, port));
             }
         }
-        Err(IoError::new(
-            IoErrorKind::Other,
-            format!("No available ports in {:?}", self.range),
-        ))
+        Err(IoError::other(format!(
+            "No available ports in {:?}",
+            self.range
+        )))
     }
 
     fn try_bind(host: Ipv4Addr, port: u16) -> IoResult<bool> {

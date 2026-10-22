@@ -74,7 +74,7 @@ impl CnosdbDataTestHelper {
                 .zip(self.data_node_clients.iter())
                 .enumerate()
             {
-                println!(" - cnosdb '{}' starting", &data_node_def.http_host_port);
+                println!(" - cnosdb '{}' starting", data_node_def.http_host_port);
                 let proc = self.execute(&data_node_def);
                 self.sub_processes
                     .insert(data_node_def.id, (i, (proc, data_node_def.mode)));

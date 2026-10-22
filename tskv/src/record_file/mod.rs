@@ -44,7 +44,7 @@ pub use reader::*;
 pub use record::*;
 pub use writer::*;
 
-pub const FILE_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'R', b'E', b'C', b'O']);
+pub const FILE_MAGIC_NUMBER: u32 = u32::from_be_bytes(*b"RECO");
 pub const FILE_MAGIC_NUMBER_LEN: usize = 4;
 pub const FILE_FOOTER_LEN: usize = 32;
 pub const FILE_FOOTER_MAGIC_NUMBER_LEN: usize = 4;
@@ -61,7 +61,7 @@ pub fn file_crc_source_len(file_len: usize, file_footer_len: usize) -> usize {
     }
 }
 
-pub const RECORD_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'F', b'l', b'O', b'g']);
+pub const RECORD_MAGIC_NUMBER: u32 = u32::from_be_bytes(*b"FlOg");
 pub const RECORD_MAGIC_NUMBER_LEN: usize = 4;
 pub const RECORD_DATA_VERSION_LEN: usize = 1;
 pub const RECORD_DATA_TYPE_LEN: usize = 1;

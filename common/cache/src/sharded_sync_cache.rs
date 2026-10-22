@@ -101,7 +101,7 @@ where
 
     fn set_capacity(&self, capacity: NonZeroUsize) {
         // FIXME: Cannot set a precise capacity freely (such as 1000, will be 63 * 16)
-        let per_shard = (capacity.get() + (self.shard.len() - 1)) / self.shard.len();
+        let per_shard = capacity.get().div_ceil(self.shard.len());
         let per_shard =
             NonZeroUsize::new(per_shard).unwrap_or(unsafe { NonZeroUsize::new_unchecked(1) });
 

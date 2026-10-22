@@ -1055,7 +1055,7 @@ impl Display for RangeValueSet {
                     Bound::Exactly => write!(f, "[")?,
                     Bound::Above => write!(f, "(")?,
                 }
-                write!(f, "({})", &marker.data_type)?;
+                write!(f, "({})", marker.data_type)?;
                 if let Some(ref v) = marker.value {
                     write!(f, "{v}")?;
                 }

@@ -324,7 +324,7 @@ fn get_interval_median(timestamps_i64: &[i64]) -> i64 {
         intervals.push(timestamps_i64[i + 1] - timestamps_i64[i]);
     }
     intervals.sort_unstable();
-    if size % 2 == 0 {
+    if size.is_multiple_of(2) {
         (intervals[size / 2 - 1] + intervals[size / 2]) / 2
     } else {
         intervals[size / 2]

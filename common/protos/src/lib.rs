@@ -118,7 +118,7 @@ impl<'a> Column<'a> {
         Ok(name)
     }
 
-    pub fn nullbit_ext(&self) -> PointsResult<Vector<u8>> {
+    pub fn nullbit_ext(&self) -> PointsResult<Vector<'_, u8>> {
         let nullbit = self.nullbits().context(ColumnMissingNullbitsSnafu)?;
         Ok(nullbit)
     }
@@ -133,7 +133,7 @@ impl<'a> Column<'a> {
         Ok(len)
     }
 
-    pub fn string_values(&self) -> PointsResult<Vector<ForwardsUOffset<&str>>> {
+    pub fn string_values(&self) -> PointsResult<Vector<'_, ForwardsUOffset<&str>>> {
         let values = self
             .col_values()
             .context(ColumnMissingValuesSnafu)?
@@ -152,7 +152,7 @@ impl<'a> Column<'a> {
         Ok(len)
     }
 
-    pub fn bool_values(&self) -> PointsResult<Vector<bool>> {
+    pub fn bool_values(&self) -> PointsResult<Vector<'_, bool>> {
         let values = self
             .col_values()
             .context(ColumnMissingValuesSnafu)?
@@ -171,7 +171,7 @@ impl<'a> Column<'a> {
         Ok(len)
     }
 
-    pub fn int_values(&self) -> PointsResult<Vector<i64>> {
+    pub fn int_values(&self) -> PointsResult<Vector<'_, i64>> {
         let values = self
             .col_values()
             .context(ColumnMissingValuesSnafu)?
@@ -190,7 +190,7 @@ impl<'a> Column<'a> {
         Ok(len)
     }
 
-    pub fn float_values(&self) -> PointsResult<Vector<f64>> {
+    pub fn float_values(&self) -> PointsResult<Vector<'_, f64>> {
         let values = self
             .col_values()
             .context(ColumnMissingValuesSnafu)?
@@ -209,7 +209,7 @@ impl<'a> Column<'a> {
         Ok(len)
     }
 
-    pub fn uint_values(&self) -> PointsResult<Vector<u64>> {
+    pub fn uint_values(&self) -> PointsResult<Vector<'_, u64>> {
         let values = self
             .col_values()
             .context(ColumnMissingValuesSnafu)?

@@ -270,7 +270,7 @@ impl TsmWriter {
             .columns()
             .iter()
             .cloned()
-            .zip(columns.into_iter())
+            .zip(columns)
             .collect::<Vec<(_, _)>>()
             .into_iter()
             .map(|(array, col_desc)| Page::arrow_array_to_page(array, col_desc))
