@@ -1085,7 +1085,7 @@ dependencies = [
 
 [[package]]
 name = "cache"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "async-backtrace",
  "async-trait",
@@ -1258,7 +1258,7 @@ checksum = "f46ad14479a25103f283c0f10005961cf086d8dc42205bb44c46ac563475dca6"
 
 [[package]]
 name = "client"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "anyhow",
  "async-backtrace",
@@ -1306,7 +1306,7 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "async-backtrace",
  "byte-unit",
@@ -1416,7 +1416,7 @@ dependencies = [
 
 [[package]]
 name = "coordinator"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "async-backtrace",
  "async-trait",
@@ -1952,7 +1952,7 @@ dependencies = [
 
 [[package]]
 name = "derive_macros"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2003,7 +2003,7 @@ dependencies = [
 
 [[package]]
 name = "derive_traits"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "async-backtrace",
  "derive_macros",
@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "e2e_test"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "arrow-flight",
  "arrow-schema",
@@ -2895,7 +2895,7 @@ dependencies = [
 
 [[package]]
 name = "http_protocol"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "async-backtrace",
  "brotli 3.5.0",
@@ -3493,7 +3493,7 @@ dependencies = [
 
 [[package]]
 name = "limiter_bucket"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "async-backtrace",
  "bincode",
@@ -3642,7 +3642,7 @@ dependencies = [
 
 [[package]]
 name = "main"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "arrow-flight",
  "async-backtrace",
@@ -3749,7 +3749,7 @@ dependencies = [
 
 [[package]]
 name = "memory_pool"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "async-backtrace",
  "datafusion",
@@ -3759,7 +3759,7 @@ dependencies = [
 
 [[package]]
 name = "meta"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "async-backtrace",
  "async-trait",
@@ -3798,7 +3798,7 @@ dependencies = [
 
 [[package]]
 name = "metrics"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "async-backtrace",
  "once_cell",
@@ -3909,7 +3909,7 @@ dependencies = [
 
 [[package]]
 name = "models"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -5030,7 +5030,7 @@ dependencies = [
 
 [[package]]
 name = "protocol_parser"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "async-backtrace",
  "atoi_simd",
@@ -5053,7 +5053,7 @@ dependencies = [
 
 [[package]]
 name = "protos"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "arrow-buffer",
  "async-backtrace",
@@ -5093,7 +5093,7 @@ dependencies = [
 
 [[package]]
 name = "query"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "async-backtrace",
  "async-recursion",
@@ -5399,7 +5399,7 @@ dependencies = [
 
 [[package]]
 name = "replication"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "actix-web",
  "async-backtrace",
@@ -6142,7 +6142,7 @@ dependencies = [
 
 [[package]]
 name = "spi"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "arrow-flight",
  "async-trait",
@@ -6201,7 +6201,7 @@ dependencies = [
 
 [[package]]
 name = "sqllogicaltests"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "arrow",
  "arrow-flight",
@@ -6940,7 +6940,7 @@ checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 
 [[package]]
 name = "trace"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "async-backtrace",
  "chrono",
@@ -7068,7 +7068,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tskv"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -7283,7 +7283,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utils"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "async-backtrace",
  "byte-unit",
@@ -7329,7 +7329,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "version"
-version = "2.4.3"
+version = "2.5.0"
 dependencies = [
  "humantime",
 ]
