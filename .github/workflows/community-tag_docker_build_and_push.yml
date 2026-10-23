@@ -19,7 +19,7 @@ jobs:
           - cnosdb-meta
         version:
           - release
-          - memcheck
+          # - memcheck
     runs-on: ubuntu-latest
     if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb/cnosdb'
     steps:
