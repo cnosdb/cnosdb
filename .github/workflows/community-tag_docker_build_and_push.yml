@@ -36,9 +36,9 @@ jobs:
       - name: Set up cargo-zigbuild
         shell: bash
         run: |
-          curl -o zig.tar.xz -sL https://ziglang.org/download/0.11.0/zig-linux-x86_64-0.11.0.tar.xz
+          curl -o zig.tar.xz -sL https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz
           sudo tar -xf zig.tar.xz -C /opt
-          echo "/opt/zig-linux-x86_64-0.11.0" >> $GITHUB_PATH
+          echo "/opt/zig-x86_64-linux-0.17.0" >> $GITHUB_PATH
           cargo install cargo-zigbuild
       - uses: actions/checkout@v3
       - name: clean pkg
